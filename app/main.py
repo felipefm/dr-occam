@@ -55,17 +55,55 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="Dr. Occam", lifespan=lifespan)
+TAGS_METADATA = [
+    {
+        "name": "Pipeline",
+        "description": "Disparo e acompanhamento do pipeline de ingestão + processamento por IA.",
+    },
+    {
+        "name": "Feed",
+        "description": "Conteúdo público consumido por leitores humanos (feed RSS e página inicial).",
+    },
+    {
+        "name": "Admin",
+        "description": "Painel de administração (`/admin`) para gerenciar as fontes de notícias.",
+    },
+    {
+        "name": "Sources",
+        "description": "CRUD das fontes RSS usadas pela ingestão. Usado pelo painel `/admin`, "
+        "mas também acessível diretamente via API.",
+    },
+]
+
+app = FastAPI(
+    title="Dr. Occam",
+    description=(
+        "API do Dr. Occam, agregador de notícias que coleta artigos de fontes RSS, "
+        "resume e neutraliza o texto via IA, e publica o resultado como página web e feed RSS.\n\n"
+        "Fluxo típico: `POST /trigger-pipeline` dispara a ingestão + processamento em background; "
+        "os artigos processados aparecem em `GET /` e `GET /feed.xml`; as fontes usadas pela "
+        "ingestão são gerenciadas pelo painel `GET /admin` e pelos endpoints `/api/sources`."
+    ),
+    version="1.0.0",
+    lifespan=lifespan,
+    openapi_tags=TAGS_METADATA,
+)
 templates = Jinja2Templates(directory="templates")
 
 
 class SourceCreatePayload(SQLModel):
-    name: str = Field(max_length=255)
-    url: str = Field(max_length=2048)
+    name: str = Field(max_length=255, description="Nome de exibição da fonte, ex.: 'G1 Mundo'.")
+    url: str = Field(
+        max_length=2048,
+        description="URL do feed RSS da fonte. Deve começar com http:// ou https://.",
+    )
 
 
 class SourceLimitPayload(SQLModel):
-    max_daily_articles: int = Field(gt=0)
+    max_daily_articles: int = Field(
+        gt=0,
+        description="Número máximo de artigos que a ingestão pode coletar desta fonte por dia.",
+    )
 
 
 def _format_summary(article: Article) -> str:
@@ -115,13 +153,39 @@ async def _run_pipeline() -> None:
         traceback.print_exc()
 
 
-@app.post("/trigger-pipeline", status_code=202)
+@app.post(
+    "/trigger-pipeline",
+    status_code=202,
+    tags=["Pipeline"],
+    summary="Disparar o pipeline de ingestão + IA",
+    description=(
+        "Inicia em background as duas etapas do pipeline, nesta ordem:\n\n"
+        "1. **Ingestão**: busca novos itens em todas as fontes ativas (`Source.active=True`) "
+        "e grava os artigos com status `PENDING`.\n"
+        "2. **Processamento LLM**: envia os artigos `PENDING` para a IA, que gera título e "
+        "resumo neutros, e marca cada artigo como `PROCESSED` (ou `DEAD`/`DEDUPLICATED`).\n\n"
+        "A resposta retorna imediatamente (HTTP 202); o progresso pode ser acompanhado em "
+        "`GET /api/logs` ou no modal de logs do `/admin`."
+    ),
+    response_description="Confirmação de que o pipeline foi agendado para execução em background.",
+)
 async def trigger_pipeline(background_tasks: BackgroundTasks) -> dict[str, str]:
     background_tasks.add_task(_run_pipeline)
     return {"message": "Pipeline iniciado"}
 
 
-@app.get("/feed.xml")
+@app.get(
+    "/feed.xml",
+    tags=["Feed"],
+    summary="Feed RSS dos artigos processados",
+    description=(
+        f"Retorna um feed RSS 2.0 (`application/rss+xml`) com os {FEED_LIMIT} artigos mais "
+        "recentes já processados pela IA (status `PROCESSED`), para consumo em leitores de "
+        "feed. Cada item traz título e resumo neutros gerados pela IA e o link para a "
+        "notícia original."
+    ),
+    response_description="Documento XML no formato RSS 2.0.",
+)
 def get_feed() -> Response:
     with Session(engine) as session:
         articles = session.exec(
@@ -156,7 +220,19 @@ def get_feed() -> Response:
     return Response(content=xml, media_type="application/rss+xml")
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get(
+    "/",
+    response_class=HTMLResponse,
+    tags=["Feed"],
+    summary="Página inicial com o feed de notícias",
+    description=(
+        f"Renderiza a página web pública com os {HOMEPAGE_LIMIT} artigos mais recentes já "
+        "processados pela IA (status `PROCESSED`), com título e resumo neutros, data de "
+        "publicação convertida para o fuso de São Paulo, e links de compartilhamento para "
+        "WhatsApp e Telegram."
+    ),
+    response_description="Página HTML do feed de notícias.",
+)
 def homepage(request: Request) -> Response:
     with Session(engine) as session:
         articles = session.exec(
@@ -193,7 +269,21 @@ def homepage(request: Request) -> Response:
     )
 
 
-@app.get("/admin", response_class=HTMLResponse)
+@app.get(
+    "/admin",
+    response_class=HTMLResponse,
+    tags=["Admin"],
+    summary="Painel de administração de fontes",
+    description=(
+        "Renderiza o painel HTML de administração: lista todas as fontes RSS cadastradas "
+        "(ativas e inativas) com seus respectivos limites diários, e oferece na própria "
+        "página os controles para cadastrar, ativar/desativar, excluir e ajustar o limite "
+        "de cada fonte — que por baixo chamam os endpoints em `/api/sources`. Também "
+        "oferece um botão para disparar o pipeline (`POST /trigger-pipeline`) e um modal "
+        "para acompanhar os logs em tempo real (`GET /api/logs`)."
+    ),
+    response_description="Página HTML do painel de administração.",
+)
 def admin_page(request: Request) -> Response:
     with Session(engine) as session:
         sources = session.exec(select(Source).order_by(Source.id)).all()
@@ -202,12 +292,33 @@ def admin_page(request: Request) -> Response:
     )
 
 
-@app.get("/api/logs")
+@app.get(
+    "/api/logs",
+    tags=["Admin"],
+    summary="Últimas linhas de log da aplicação",
+    description=(
+        f"Retorna as últimas (até {LOG_BUFFER_SIZE}) linhas de log em memória da aplicação, "
+        "mais recentes por último. Usado pelo modal de logs do `/admin` para acompanhar a "
+        "execução do pipeline sem precisar de acesso ao terminal/`docker logs`."
+    ),
+    response_description="Lista de linhas de log, em ordem cronológica.",
+)
 def get_logs() -> dict[str, list[str]]:
     return {"logs": list(_log_buffer)}
 
 
-@app.post("/api/sources", status_code=201)
+@app.post(
+    "/api/sources",
+    status_code=201,
+    tags=["Sources"],
+    summary="Cadastrar uma nova fonte RSS",
+    description=(
+        "Cria uma nova fonte de notícias do tipo RSS, ativa por padrão e com limite diário "
+        "padrão de 50 artigos (ajustável depois via `PUT /api/sources/{source_id}/limit`). "
+        "A fonte passa a ser incluída na próxima execução do pipeline de ingestão."
+    ),
+    response_description="A fonte recém-criada, incluindo o `id` gerado.",
+)
 def create_source(payload: SourceCreatePayload) -> Source:
     if not payload.url.startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="URL deve começar com http:// ou https://")
@@ -223,7 +334,16 @@ def create_source(payload: SourceCreatePayload) -> Source:
         return source
 
 
-@app.patch("/api/sources/{source_id}/toggle")
+@app.patch(
+    "/api/sources/{source_id}/toggle",
+    tags=["Sources"],
+    summary="Ativar/desativar uma fonte",
+    description=(
+        "Inverte o estado `active` da fonte. Fontes inativas são ignoradas pela próxima "
+        "execução do pipeline de ingestão, mas seus artigos já coletados permanecem no feed."
+    ),
+    response_description="A fonte com o novo valor de `active`.",
+)
 def toggle_source(source_id: int) -> Source:
     with Session(engine) as session:
         source = session.get(Source, source_id)
@@ -240,7 +360,18 @@ def toggle_source(source_id: int) -> Source:
         return source
 
 
-@app.delete("/api/sources/{source_id}", status_code=204)
+@app.delete(
+    "/api/sources/{source_id}",
+    status_code=204,
+    tags=["Sources"],
+    summary="Excluir uma fonte",
+    description=(
+        "Remove a fonte permanentemente. Os artigos já coletados dessa fonte **não** são "
+        "excluídos: apenas perdem o vínculo (`Article.source_id` passa a `null`) e "
+        "continuam aparecendo no feed e na página inicial."
+    ),
+    response_description="Sem conteúdo — exclusão confirmada.",
+)
 def delete_source(source_id: int) -> Response:
     with Session(engine) as session:
         source = session.get(Source, source_id)
@@ -253,7 +384,17 @@ def delete_source(source_id: int) -> Response:
     return Response(status_code=204)
 
 
-@app.put("/api/sources/{source_id}/limit")
+@app.put(
+    "/api/sources/{source_id}/limit",
+    tags=["Sources"],
+    summary="Ajustar o limite diário de artigos de uma fonte",
+    description=(
+        "Define o número máximo de artigos que a ingestão pode coletar dessa fonte por dia "
+        "(`Source.max_daily_articles`). Usado para conter fontes muito volumosas sem precisar "
+        "desativá-las."
+    ),
+    response_description="A fonte com o novo valor de `max_daily_articles`.",
+)
 def update_source_limit(source_id: int, payload: SourceLimitPayload) -> Source:
     with Session(engine) as session:
         source = session.get(Source, source_id)
