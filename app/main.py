@@ -11,7 +11,7 @@ from urllib.parse import quote
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Field, Session, SQLModel, select
@@ -172,6 +172,64 @@ async def _run_pipeline() -> None:
 async def trigger_pipeline(background_tasks: BackgroundTasks) -> dict[str, str]:
     background_tasks.add_task(_run_pipeline)
     return {"message": "Pipeline iniciado"}
+
+
+async def _run_llm_reprocessing() -> None:
+    logger.info("Reprocessamento de DEAD: gatilho recebido, iniciando em background")
+    try:
+        llm_summary = await run_llm_processing()
+        logger.info("Reprocessamento de DEAD: processamento LLM concluído: %s", llm_summary)
+    except Exception as e:
+        logger.error("Reprocessamento de DEAD: falha durante a execução: %s", e)
+        traceback.print_exc()
+
+
+@app.post(
+    "/pipeline/reprocess-dead",
+    status_code=202,
+    tags=["Pipeline"],
+    summary="Ressuscitar artigos marcados como falha (DEAD) para reprocessamento",
+    description=(
+        "Busca até `limit` artigos com status `DEAD` (falha definitiva — todos os modelos "
+        "da cascata de IA falharam, inclusive na repescagem da fila standby), volta o status "
+        "deles para `PENDING` e zera `retry_count`, dando a cada um o mesmo orçamento de "
+        "`LLM_MAX_RETRIES` tentativas de um artigo novo. Em seguida dispara em background o "
+        "mesmo ciclo de processamento LLM usado pelo pipeline normal (`run_llm_processing`), "
+        "reaproveitando a fila standby, o semáforo de concorrência e a lógica de timeout já "
+        "existentes — nenhuma lógica nova de chamada à IA é criada aqui. A resposta retorna "
+        "imediatamente (HTTP 202); o progresso pode ser acompanhado em `GET /api/logs`."
+    ),
+    response_description="Quantidade de artigos ressuscitados e enviados para reprocessamento.",
+)
+def reprocess_dead_articles(
+    background_tasks: BackgroundTasks,
+    limit: int = Query(
+        default=20, gt=0, le=200,
+        description="Máximo de artigos DEAD a ressuscitar nesta chamada.",
+    ),
+) -> dict[str, Any]:
+    with Session(engine) as session:
+        dead_articles = session.exec(
+            select(Article)
+            .where(Article.status == ArticleStatus.DEAD)
+            .order_by(Article.created_at.asc())
+            .limit(limit)
+        ).all()
+
+        for article in dead_articles:
+            article.status = ArticleStatus.PENDING
+            article.retry_count = 0
+            session.add(article)
+        session.commit()
+
+        resurrected = len(dead_articles)
+
+    logger.info("Reprocessamento de DEAD: %d artigo(s) ressuscitado(s) para PENDING", resurrected)
+
+    if resurrected:
+        background_tasks.add_task(_run_llm_reprocessing)
+
+    return {"message": "Reprocessamento iniciado", "articles_resurrected": resurrected}
 
 
 @app.get(

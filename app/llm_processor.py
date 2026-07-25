@@ -33,6 +33,20 @@ Variáveis de ambiente:
     LLM_BATCH_SIZE: quantidade máxima de artigos PENDING processados por
         execução (default 20).
     LLM_MAX_CONCURRENCY: chamadas concorrentes ao provider LLM (default 3).
+
+Fila standby (repescagem de timeout):
+    Um artigo que dá timeout em toda a cascata no lote principal não é
+    marcado como falha na hora — é reservado numa lista em memória
+    (`standby_queue`) e tentado de novo, uma única vez, depois que o lote
+    principal terminar (reaproveitando o mesmo semáforo de concorrência).
+    Isso existe porque, com LLM local e textos longos, um timeout muitas
+    vezes é só a máquina ocupada processando o artigo anterior — vale uma
+    segunda chance no fim da fila antes de gastar um dos `LLM_MAX_RETRIES`
+    do artigo. Se a repescagem também der timeout, aí sim o artigo é
+    marcado `ArticleStatus.DEAD` imediatamente (sem esperar os ciclos de
+    `LLM_MAX_RETRIES`), pra não travar os próximos ciclos de ingestão.
+    Erros que não são timeout (JSON malformado, autenticação etc.) nunca
+    entram na standby_queue — seguem direto pelo fluxo de falha normal.
 """
 
 import asyncio
@@ -146,7 +160,14 @@ def _parse_completion(raw: str) -> tuple[str, str]:
     return title.strip(), summary.strip()
 
 
-async def _process_article(semaphore: asyncio.Semaphore, article_id: int) -> None:
+async def _process_article(
+    semaphore: asyncio.Semaphore, article_id: int, standby_queue: list[int] | None
+) -> None:
+    """Processa um artigo PENDING. `standby_queue`, quando não-None, é a
+    lista de repescagem do lote principal: um timeout aqui só reserva o
+    artigo nela (sem tocar o banco) em vez de marcar falha. `None` sinaliza
+    que esta é a própria repescagem — um timeout aqui já vai direto para
+    ArticleStatus.DEAD (ver docstring do módulo)."""
     with Session(engine) as session:
         article = session.get(Article, article_id)
         if article is None or article.status != ArticleStatus.PENDING:
@@ -159,6 +180,7 @@ async def _process_article(semaphore: asyncio.Semaphore, article_id: int) -> Non
     title: str | None = None
     summary: str | None = None
     failed = False
+    force_dead = False  # timeout na repescagem pula a paciência de LLM_MAX_RETRIES
     responding_model = LLM_CASCADE[0]["model"]
 
     primary, *fallbacks = LLM_CASCADE
@@ -200,6 +222,23 @@ async def _process_article(semaphore: asyncio.Semaphore, article_id: int) -> Non
             prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
             completion_tokens = getattr(usage, "completion_tokens", 0) or 0
             raw = response.choices[0].message.content or ""
+        except litellm.Timeout as exc:
+            if standby_queue is not None:
+                logger.warning(
+                    "Artigo %s: timeout em toda a cascata (%s) — reservado para "
+                    "repescagem no fim do lote em vez de marcar falha agora",
+                    article_id, cascade_models,
+                )
+                standby_queue.append(article_id)
+                return
+            failed = True
+            force_dead = True
+            status_code = 408
+            logger.error(
+                "Artigo %s: timeout também na repescagem (%s) — marcando falha "
+                "definitiva: %s",
+                article_id, cascade_models, exc,
+            )
         except Exception as exc:
             # A cascata (fallbacks) já tentou todos os modelos configurados
             # silenciosamente; chegar aqui significa que todos falharam.
@@ -246,7 +285,7 @@ async def _process_article(semaphore: asyncio.Semaphore, article_id: int) -> Non
             article.retry_count += 1
             article.status = (
                 ArticleStatus.DEAD
-                if article.retry_count >= MAX_RETRIES
+                if force_dead or article.retry_count >= MAX_RETRIES
                 else ArticleStatus.PENDING
             )
 
@@ -280,7 +319,21 @@ async def run_llm_processing() -> dict[str, int]:
         return {"processed": 0, "dead": 0, "pending_retry": 0}
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
-    await asyncio.gather(*(_process_article(semaphore, aid) for aid in article_ids))
+
+    standby_queue: list[int] = []
+    await asyncio.gather(
+        *(_process_article(semaphore, aid, standby_queue) for aid in article_ids)
+    )
+
+    if standby_queue:
+        retry_ids = list(standby_queue)
+        logger.info(
+            "Repescagem: %d artigo(s) com timeout no lote principal — tentando de novo",
+            len(retry_ids),
+        )
+        await asyncio.gather(
+            *(_process_article(semaphore, aid, None) for aid in retry_ids)
+        )
 
     with Session(engine) as session:
         processed = session.exec(
