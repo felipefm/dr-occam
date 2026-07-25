@@ -40,6 +40,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
 from database import engine
+from http_headers import random_profile
 from models import Article, ArticleStatus, Source, SourceType
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -50,14 +51,6 @@ NEGATIVE_KEYWORDS: list[str] = [
     for keyword in os.getenv("NEGATIVE_KEYWORDS", "").split(",")
     if keyword.strip()
 ]
-
-# Alguns provedores (ex.: Google News) redirecionam/bloqueiam requisições
-# que usam o User-Agent padrão de bibliotecas HTTP (httpx, urllib, etc.),
-# tratando-as como bot. Um UA de navegador real evita esse bloqueio.
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
 
 HTTP_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 SCRAPE_DELAY_SECONDS = 2
@@ -220,8 +213,9 @@ async def _extract_via_trafilatura(
     client: httpx.AsyncClient, url: str, _feed_content: str | None
 ) -> str | None:
     """Estratégia principal: baixa a página com o client HTTP compartilhado
-    (já configurado com User-Agent de navegador) e extrai o texto
-    principal com trafilatura. Não usa mais trafilatura.fetch_url — assim
+    (já configurado com o perfil de navegador sorteado em run_ingestion —
+    ver http_headers.py) e extrai o texto principal com trafilatura. Não
+    usa mais trafilatura.fetch_url — assim
     o download da página passa pelo mesmo mecanismo de retry/headers usado
     para o resto do pipeline, em vez de duplicar essa configuração."""
     try:
@@ -416,8 +410,10 @@ async def run_ingestion() -> dict[str, int]:
             count = await _process_source(client, source)
             return source.name, count
 
+    profile = random_profile()
+    logger.info("Ingestão: usando perfil de navegador '%s'", profile.name)
     async with httpx.AsyncClient(
-        timeout=HTTP_TIMEOUT, headers={"User-Agent": USER_AGENT}
+        timeout=HTTP_TIMEOUT, headers=profile.headers()
     ) as client:
         results = await asyncio.gather(*(_bounded(source) for source in sources))
 
