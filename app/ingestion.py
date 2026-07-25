@@ -279,20 +279,67 @@ def _existing_urls(session: Session, urls: list[str]) -> set[str]:
     return set(session.exec(statement).all())
 
 
-def _count_articles_today(session: Session, source_id: int) -> int:
-    start_of_day = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+# Status que contam para a cota diária de uma fonte e aparecem no
+# feed/painel. DEAD e DEDUPLICATED nunca entraram no ar, então não devem
+# "gastar" cota; ARCHIVED é justamente o que sai da cota via soft delete.
+_ACTIVE_STATUSES = (ArticleStatus.PENDING, ArticleStatus.PROCESSED)
+
+
+def _start_of_today() -> datetime:
+    return datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _active_count_today(session: Session, source_id: int) -> int:
     statement = (
         select(func.count())
         .select_from(Article)
-        .where(Article.source_id == source_id, Article.created_at >= start_of_day)
+        .where(
+            Article.source_id == source_id,
+            Article.created_at >= _start_of_today(),
+            Article.status.in_(_ACTIVE_STATUSES),
+        )
     )
     return session.exec(statement).one()
 
 
+def _enforce_daily_cap(session: Session, source: Source) -> None:
+    """Teto deslizante (FIFO): nunca deixamos de baixar um link inédito por
+    causa da cota — em vez disso, toda vez que uma inserção deixa a fonte
+    com mais artigos ativos hoje do que `max_daily_articles`, arquivamos
+    (soft delete, via ArticleStatus.ARCHIVED) o(s) mais antigo(s) do dia
+    até voltar ao limite. Nada é apagado: o artigo continua no banco,
+    só some da cota e do feed/painel (que só listam PENDING/PROCESSED)."""
+    while _active_count_today(session, source.id) > source.max_daily_articles:
+        oldest = session.exec(
+            select(Article)
+            .where(
+                Article.source_id == source.id,
+                Article.created_at >= _start_of_today(),
+                Article.status.in_(_ACTIVE_STATUSES),
+            )
+            .order_by(Article.created_at.asc())
+            .limit(1)
+        ).first()
+        if oldest is None:
+            break  # segurança: não deveria acontecer, count() já garantiu que existe
+
+        logger.info(
+            "Fonte '%s': cota diária (%d) excedida — arquivando artigo mais antigo "
+            "de hoje (id=%s, url=%s)",
+            source.name, source.max_daily_articles, oldest.id, oldest.original_url,
+        )
+        oldest.status = ArticleStatus.ARCHIVED
+        session.add(oldest)
+        session.commit()
+
+
 async def _process_source(client: httpx.AsyncClient, source: Source) -> int:
-    """Processa uma fonte ativa e retorna a quantidade de artigos salvos."""
+    """Processa uma fonte ativa e retorna a quantidade de artigos salvos.
+
+    Teto deslizante (FIFO): max_daily_articles não limita mais quantos
+    links novos são baixados — todo link inédito do feed é sempre baixado
+    e processado. A cota só entra em ação depois, arquivando os artigos
+    mais antigos do dia via _enforce_daily_cap (ver docstring lá)."""
     assert source.id is not None
 
     logger.info(
@@ -313,15 +360,6 @@ async def _process_source(client: httpx.AsyncClient, source: Source) -> int:
         return 0
 
     with Session(engine) as session:
-        already_today = _count_articles_today(session, source.id)
-        remaining_quota = max(source.max_daily_articles - already_today, 0)
-        logger.info(
-            "Fonte '%s': %d artigos já salvos hoje, cota diária restante = %d",
-            source.name, already_today, remaining_quota,
-        )
-        if remaining_quota == 0:
-            logger.info("Fonte '%s' já atingiu o limite diário de artigos", source.name)
-            return 0
         known_urls = _existing_urls(session, [url for url, _, _ in candidates])
 
     keyword_filtered: list[str] = []
@@ -340,7 +378,14 @@ async def _process_source(client: httpx.AsyncClient, source: Source) -> int:
             source.name, len(keyword_filtered), keyword_filtered,
         )
 
-    fresh_candidates = fresh_candidates[:remaining_quota]
+    # Feeds RSS vêm ordenados do mais recente para o mais antigo, então
+    # cortar aqui pelo teto da fonte (não pela "cota restante") já pega só
+    # as notícias mais quentes — sem isso, uma fonte com limite baixo mas
+    # muitos links inéditos de uma vez (ex.: acabou de ser cadastrada)
+    # baixaria e processaria na IA tudo, para o _enforce_daily_cap arquivar
+    # o excedente um segundo depois. Caro à toa com LLM local.
+    fresh_candidates = fresh_candidates[: source.max_daily_articles]
+
     logger.info(
         "Fonte '%s': %d artigos novos a coletar (de %d links no feed)",
         source.name, len(fresh_candidates), len(candidates),
@@ -382,6 +427,9 @@ async def _process_source(client: httpx.AsyncClient, source: Source) -> int:
             except IntegrityError:
                 session.rollback()
                 logger.info("Artigo '%s' já existia (condição de corrida)", resolved_url)
+                continue
+
+            _enforce_daily_cap(session, source)
 
     return saved
 

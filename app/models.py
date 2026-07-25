@@ -23,6 +23,11 @@ class ArticleStatus(str, Enum):
     PROCESSED = "PROCESSED"
     DEAD = "DEAD"
     DEDUPLICATED = "DEDUPLICATED"
+    # Teto deslizante (FIFO) de max_daily_articles: quando uma fonte
+    # ultrapassa a cota diária de artigos ativos, o mais antigo do dia
+    # vira ARCHIVED (soft delete) — some do feed/painel e para de contar
+    # na cota, mas nunca é apagado do banco. Ver ingestion._enforce_daily_cap.
+    ARCHIVED = "ARCHIVED"
 
 
 class Source(SQLModel, table=True):
