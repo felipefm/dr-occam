@@ -13,6 +13,8 @@
       --link: #0b57d0;
       --card-bg: #ffffff;
       --font-scale: 1;
+      --accent: #0f9d78;
+      --accent-soft: rgba(15, 157, 120, .1);
     }
     :root[data-theme="dark"] {
       --bg: #15171b;
@@ -21,6 +23,8 @@
       --border: #2a2d33;
       --link: #7fb1ff;
       --card-bg: #1b1e24;
+      --accent: #34d399;
+      --accent-soft: rgba(52, 211, 153, .14);
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
@@ -30,6 +34,8 @@
         --border: #2a2d33;
         --link: #7fb1ff;
         --card-bg: #1b1e24;
+        --accent: #34d399;
+        --accent-soft: rgba(52, 211, 153, .14);
       }
     }
     * { box-sizing: border-box; }
@@ -72,10 +78,44 @@
     a:hover { text-decoration: underline; }
     .card {
       border-bottom: 1px solid var(--border);
-      padding: 1.1em 0;
+      border-left: 3px solid transparent;
+      padding: 1.1em 0 1.1em .9em;
+      margin-left: -.9em;
+      transition: border-color .3s ease, background-color .3s ease;
+    }
+    .card.is-new {
+      border-left-color: var(--accent);
+      background: var(--accent-soft);
+      border-radius: 0 .5em .5em 0;
     }
     .card h2 { margin: 0 0 .3em; font-size: 1.1em; }
+    .card .meta { display: flex; align-items: center; gap: .6em; }
     .card time { color: var(--muted); font-size: .85em; }
+    .badge-new {
+      display: inline-flex;
+      align-items: center;
+      gap: .4em;
+      font-size: .7em;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .badge-new::before {
+      content: "";
+      width: .5em;
+      height: .5em;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: occam-pulse 2s ease-in-out infinite;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .badge-new::before { animation: none; }
+    }
+    @keyframes occam-pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--accent-soft); }
+      50% { opacity: .6; box-shadow: 0 0 0 .3em var(--accent-soft); }
+    }
     .card p { white-space: pre-line; margin: .6em 0; }
     .share-row { display: flex; gap: .6em; margin-top: .5em; }
     .share-row a {
@@ -100,9 +140,11 @@
 
   {% if cards %}
     {% for card in cards %}
-    <article class="card">
+    <article class="card" data-created-at="{{ card.created_at_iso }}">
       <h2><a href="{{ card.url }}" target="_blank" rel="noopener noreferrer">{{ card.title }}</a></h2>
-      <time>{{ card.date }}</time>
+      <div class="meta">
+        <time>{{ card.date }}</time>
+      </div>
       <p>{{ card.summary }}</p>
       <div class="share-row">
         <a href="{{ card.whatsapp_url }}" target="_blank" rel="noopener noreferrer">Compartilhar no WhatsApp</a>
@@ -167,6 +209,50 @@
         var current = parseFloat(getComputedStyle(root).getPropertyValue('--font-scale')) || 1;
         applyFontScale(current - 0.1);
       });
+    })();
+
+    // Destaque "Novo": compara a data de cada card com a última vez que
+    // esta página foi carregada NESTE navegador (localStorage, sem sessão
+    // no servidor — mesmo padrão do tema/tamanho de fonte acima). Só o que
+    // chegou depois da última visita fica marcado, então rodar o pipeline
+    // várias vezes no mesmo dia não deixa tudo "novo" de novo — só o que
+    // realmente é incremental desde a última checada.
+    (function () {
+      var LAST_SEEN_KEY = 'occam-last-seen';
+      // Grava a marca de "visto" só depois de MARK_SEEN_DELAY_MS na página
+      // (em vez de na hora do load) — uma passagem rápida por aqui (ex.:
+      // indo pro /admin e voltando) não deve "gastar" o destaque antes de
+      // ele ter sido realmente visto; navegar embora antes do timer cancela
+      // a gravação, então o destaque continua lá na próxima visita.
+      var MARK_SEEN_DELAY_MS = 4000;
+
+      var cards = Array.prototype.slice.call(document.querySelectorAll('.card[data-created-at]'));
+      if (!cards.length) return;
+
+      var storedRaw = localStorage.getItem(LAST_SEEN_KEY);
+      var lastSeen = storedRaw ? new Date(storedRaw) : null;
+      var maxSeen = lastSeen || new Date(0);
+
+      cards.forEach(function (card) {
+        var createdAt = new Date(card.dataset.createdAt);
+        if (isNaN(createdAt.getTime())) return;
+        if (createdAt > maxSeen) maxSeen = createdAt;
+
+        // Sem 'lastSeen' = primeira visita neste navegador: não há
+        // referência pra comparar, então não marca nada como novo agora —
+        // só estabelece o marco pra próxima visita.
+        if (lastSeen && createdAt > lastSeen) {
+          card.classList.add('is-new');
+          var badge = document.createElement('span');
+          badge.className = 'badge-new';
+          badge.textContent = 'Novo';
+          card.querySelector('.meta').appendChild(badge);
+        }
+      });
+
+      setTimeout(function () {
+        localStorage.setItem(LAST_SEEN_KEY, maxSeen.toISOString());
+      }, MARK_SEEN_DELAY_MS);
     })();
   </script>
 </body>

@@ -170,11 +170,18 @@ def homepage(request: Request) -> Response:
         for article in articles:
             title = article.ai_title or "(sem título)"
             summary = _format_summary(article)
+            created_at = article.created_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
             cards.append(
                 {
                     "title": title,
                     "url": article.original_url,
                     "date": _to_display_timezone(article.created_at).strftime("%d/%m/%Y %H:%M"),
+                    # ISO 8601 em UTC — consumido pelo JS do template para decidir,
+                    # no navegador, quais cards chegaram depois da última visita
+                    # (ver comentário de "occam-last-seen" em index.html).
+                    "created_at_iso": created_at.isoformat(),
                     "summary": summary,
                     "whatsapp_url": _whatsapp_share_url(title, summary, article.original_url),
                     "telegram_url": _telegram_share_url(title, summary, article.original_url),

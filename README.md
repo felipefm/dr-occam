@@ -111,6 +111,27 @@ Hoje, pra cadastrar um site sem RSS nativo (ex.: `bbc.com/technology`), o usuár
 - Alguns parâmetros de rota não existem na URL visível da página (ex.: a rota `/bbc/topics/:topic` pede um ID que só aparece dentro do HTML/URL de uma página de tópico específica do BBC) — nesses casos a auto-detecção falha e precisa cair pra um fluxo manual de qualquer forma.
 - Por isso, qualquer implementação futura precisa de um fallback gracioso ("não encontrei rota automática pra esse domínio, cadastre manualmente") em vez de assumir que todo link terá sucesso.
 
+### Ideia futura: ativar `--reload` do uvicorn (evitar rebuild a cada ajuste)
+
+Hoje, qualquer alteração em código (`.py`) só é refletida no container depois de um ciclo completo `docker compose down` + `docker compose up -d --build` — lento e repetitivo durante desenvolvimento iterativo.
+
+**Causa raiz:** o `docker-compose.yml` já monta `./app:/app` por volume (o próprio comentário no arquivo diz "para hot-reload"), mas o `CMD` do `Dockerfile` nunca foi ajustado pra aproveitar isso — o `uvicorn` sobe sem a flag `--reload`, então o processo dentro do container não percebe mudança nenhuma sozinho.
+
+**Correção proposta:** trocar o `CMD` do `Dockerfile` (`app/Dockerfile:21`) para incluir `--reload`, por exemplo:
+
+```
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+```
+
+Como o código já é bind-mount (não uma cópia estática da imagem), o `uvicorn` passa a detectar sozinho quando um arquivo `.py` muda e reinicia o processo automaticamente (~1s) — sem precisar de nenhum comando manual. Templates Jinja2 (`app/templates/*.html`) já são lidos do disco a cada requisição por padrão, então esses já deveriam refletir mudança só com F5, independente do `--reload`.
+
+**Ressalvas:**
+
+- Precisa de **um rebuild único** pra essa mudança de `CMD` entrar em vigor (depois disso, edits de código não pedem mais rebuild).
+- Mudanças em `requirements.txt` (dependência nova) continuam exigindo `docker compose up -d --build` — pacotes instalados ficam "assados" na imagem, o `--reload` não cobre isso.
+- É um watcher de arquivos rodando o tempo todo — custo de CPU/RAM desprezível pro uso pessoal/dev, mas foge um pouco do princípio de "leveza" do `negocio.md` pensado pra produção numa Raspberry Pi. Não é recomendado deixar `--reload` ativo num ambiente de produção "real" — só faz sentido enquanto o projeto está em desenvolvimento ativo.
+- Não precisa mexer em nada no CasaOS pra isso — o botão de restart/recreate dele já roda `docker compose` por baixo dos panos; resolvendo o `--reload`, o CasaOS nem entra na equação pra esse tipo de ajuste.
+
 ## Observação importante
 
 A extração de conteúdo trocou de um microsserviço externo (Browserless, que abria uma instância de Chromium por notícia e chegava a consumir 100% de CPU/RAM com poucas raspagens simultâneas) para `trafilatura`, uma biblioteca leve que baixa e extrai o texto principal do artigo dentro do próprio processo do `api-occam`. Como consequência, o `docker-compose.yml` voltou a ter um único container. Para manter o consumo de recursos baixo, os artigos de uma mesma fonte são raspados **um de cada vez** (`app/ingestion.py`), com uma pausa de `SCRAPE_DELAY_SECONDS` (2s, fixo no código) entre cada extração — isso é deliberadamente conservador; fontes diferentes ainda podem ser processadas em paralelo entre si (`MAX_CONCURRENT_FEEDS`).

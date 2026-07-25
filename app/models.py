@@ -44,7 +44,10 @@ class Article(SQLModel, table=True):
     __tablename__ = "article"
 
     id: int | None = Field(default=None, primary_key=True)
-    source_id: int = Field(foreign_key="source.id", nullable=False, index=True)
+    # Nullable: ao excluir uma fonte, os artigos já coletados dela devem
+    # continuar no banco/feed (histórico preservado), só perdem o vínculo —
+    # ver DELETE /api/sources/{id} em main.py e a migração em database.py.
+    source_id: int | None = Field(default=None, foreign_key="source.id", index=True)
     original_url: str = Field(
         nullable=False, unique=True, index=True, max_length=2048
     )
@@ -66,7 +69,7 @@ class Article(SQLModel, table=True):
         default_factory=_utcnow, nullable=False, index=True
     )
 
-    source: Source = Relationship(back_populates="articles")
+    source: Source | None = Relationship(back_populates="articles")
     processing_logs: list["LLMProcessingLog"] = Relationship(back_populates="article")
 
 
