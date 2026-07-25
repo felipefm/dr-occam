@@ -1,0 +1,14 @@
+# Segredos / configuração local
+.env
+
+# Banco de dados SQLite (dado de runtime, não faz parte do código)
+app/data/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Configuração local do Claude Code (pessoal, não do projeto)
+**/.claude/settings.local.json

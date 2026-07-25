@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # 1. Dr. Occam (Nosso Sistema Central em FastAPI)
+  # Único container: a extração de conteúdo roda in-process via trafilatura,
+  # sem depender de um microsserviço externo de scraping/renderização.
+  api-occam:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: dr_occam_api
+    ports:
+      - "8383:8000" # Porta para acessar a interface e o feed RSS
+    volumes:
+      - ./app:/app  # Mapeamento do código para hot-reload
+      - ./app/data:/app/data # Persistência do banco de dados SQLite
+    env_file:
+      - .env
+    environment:
+      - TZ=America/Sao_Paulo
+    networks:
+      - occam_network
+
+  # 2. RSSHub (Gerador de feeds RSS para sites que não possuem nativamente)
+  # Usado como fonte alternativa: sites sem RSS passam a ser cadastrados no
+  # Dr. Occam como uma fonte RSS normal, apontando para a rota gerada aqui
+  # (ex.: http://rsshub:1200/algumSite), sem exigir raspagem de HTML no
+  # sistema central.
+  rsshub:
+    image: diygod/rsshub:2026-07-24
+    container_name: rsshub
+    restart: unless-stopped
+    ports:
+      - "1200:1200"
+    environment:
+      - NODE_ENV=production
+      - TZ=America/Sao_Paulo
+    networks:
+      - occam_network
+
+networks:
+  occam_network:
+    driver: bridge
+

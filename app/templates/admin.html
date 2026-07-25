@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dr. Occam · Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-neutral-950 text-neutral-200 min-h-screen">
+  <div class="max-w-4xl mx-auto px-4 py-10">
+    <header class="flex items-center justify-between mb-8 gap-4 flex-wrap">
+      <div>
+        <h1 class="text-xl font-semibold text-white">Dr. Occam · Fontes</h1>
+        <p class="text-sm text-neutral-500 mt-1">Gerencie os feeds RSS usados na ingestão.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button
+          id="run-pipeline-btn"
+          class="rounded-md bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >▶ Executar varredura</button>
+        <button
+          id="open-logs-btn"
+          class="rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors"
+        >🖥 Ver logs</button>
+        <a href="/" class="text-sm text-neutral-400 hover:text-neutral-200 hover:underline">← Voltar para o feed</a>
+      </div>
+    </header>
+
+    <section class="bg-neutral-900 border border-neutral-800 rounded-lg p-5 mb-8">
+      <h2 class="text-sm font-medium text-neutral-300 mb-3">Adicionar fonte</h2>
+      <form id="add-source-form" class="flex flex-col sm:flex-row gap-3">
+        <input
+          id="source-name" name="name" type="text" required maxlength="255"
+          placeholder="Nome (ex.: G1 Mundo)"
+          class="flex-1 rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+        <input
+          id="source-url" name="url" type="url" required maxlength="2048"
+          placeholder="https://exemplo.com/rss/feed.xml"
+          class="flex-[2] rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+        <button
+          type="submit"
+          class="rounded-md bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >Adicionar fonte</button>
+      </form>
+      <p id="form-error" class="hidden mt-3 text-sm text-red-400"></p>
+    </section>
+
+    <section class="bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-neutral-400 border-b border-neutral-800 bg-neutral-900/60">
+            <th class="px-4 py-3 font-medium">Nome</th>
+            <th class="px-4 py-3 font-medium">URL</th>
+            <th class="px-4 py-3 font-medium">Status</th>
+            <th class="px-4 py-3 font-medium">Limite diário</th>
+            <th class="px-4 py-3 font-medium text-right">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="sources-tbody">
+          {% for source in sources %}
+          <tr data-source-id="{{ source.id }}" class="border-b border-neutral-800 last:border-0 hover:bg-neutral-800/50">
+            <td class="px-4 py-3 text-neutral-200 whitespace-nowrap">{{ source.name }}</td>
+            <td class="px-4 py-3 text-neutral-400 max-w-xs truncate">
+              {% if source.url.startswith('http://') or source.url.startswith('https://') %}
+              <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.url }}</a>
+              {% else %}
+              {{ source.url }}
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              <span class="status-badge inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {{ 'bg-emerald-500/10 text-emerald-400' if source.active else 'bg-neutral-700 text-neutral-400' }}">
+                {{ 'Ativo' if source.active else 'Inativo' }}
+              </span>
+            </td>
+            <td class="px-4 py-3">
+              <input
+                type="number" min="1" class="limit-input w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                value="{{ source.max_daily_articles }}" data-original="{{ source.max_daily_articles }}"
+              >
+            </td>
+            <td class="px-4 py-3 text-right whitespace-nowrap space-x-2">
+              <button class="toggle-btn rounded-md px-3 py-1 text-xs font-medium bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition-colors">Alternar</button>
+              <button class="delete-btn rounded-md px-3 py-1 text-xs font-medium bg-red-600/20 hover:bg-red-600/30 text-red-400 transition-colors">Excluir</button>
+            </td>
+          </tr>
+          {% else %}
+          <tr id="empty-state">
+            <td colspan="5" class="px-4 py-10 text-center text-neutral-500">Nenhuma fonte cadastrada ainda.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <div id="logs-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+    <div class="w-full max-w-3xl h-[80vh] rounded-lg border border-emerald-900 bg-black shadow-2xl shadow-emerald-900/30 flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-emerald-900/60 shrink-0">
+        <h2 class="text-emerald-400 font-mono text-sm">$ tail -f dr_occam_api.log</h2>
+        <button id="close-logs-btn" class="text-emerald-400/70 hover:text-emerald-300 text-lg leading-none px-1">✕</button>
+      </div>
+      <pre id="logs-output" class="flex-1 overflow-y-auto px-4 py-3 font-mono text-xs text-emerald-400 whitespace-pre-wrap break-all leading-relaxed">Carregando logs…</pre>
+    </div>
+  </div>
+
+  <script>
+    const tableBody = document.getElementById('sources-tbody');
+    const form = document.getElementById('add-source-form');
+    const formError = document.getElementById('form-error');
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str ?? '';
+      return div.innerHTML;
+    }
+
+    function safeHref(url) {
+      try {
+        const parsed = new URL(url);
+        return (parsed.protocol === 'http:' || parsed.protocol === 'https:') ? parsed.href : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function statusBadgeHTML(active) {
+      const cls = active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-neutral-700 text-neutral-400';
+      const label = active ? 'Ativo' : 'Inativo';
+      return `<span class="status-badge inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}">${label}</span>`;
+    }
+
+    function urlCellHTML(url) {
+      const href = safeHref(url);
+      return href
+        ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" class="hover:underline">${escapeHtml(url)}</a>`
+        : escapeHtml(url);
+    }
+
+    function rowHTML(source) {
+      return `
+        <td class="px-4 py-3 text-neutral-200 whitespace-nowrap">${escapeHtml(source.name)}</td>
+        <td class="px-4 py-3 text-neutral-400 max-w-xs truncate">${urlCellHTML(source.url)}</td>
+        <td class="px-4 py-3">${statusBadgeHTML(source.active)}</td>
+        <td class="px-4 py-3">
+          <input type="number" min="1" class="limit-input w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" value="${source.max_daily_articles}" data-original="${source.max_daily_articles}">
+        </td>
+        <td class="px-4 py-3 text-right whitespace-nowrap space-x-2">
+          <button class="toggle-btn rounded-md px-3 py-1 text-xs font-medium bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition-colors">Alternar</button>
+          <button class="delete-btn rounded-md px-3 py-1 text-xs font-medium bg-red-600/20 hover:bg-red-600/30 text-red-400 transition-colors">Excluir</button>
+        </td>
+      `;
+    }
+
+    function removeEmptyState() {
+      document.getElementById('empty-state')?.remove();
+    }
+
+    function showEmptyStateIfNeeded() {
+      if (tableBody.querySelector('tr[data-source-id]')) return;
+      const tr = document.createElement('tr');
+      tr.id = 'empty-state';
+      tr.innerHTML = '<td colspan="5" class="px-4 py-10 text-center text-neutral-500">Nenhuma fonte cadastrada ainda.</td>';
+      tableBody.appendChild(tr);
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      formError.classList.add('hidden');
+
+      const name = document.getElementById('source-name').value.trim();
+      const url = document.getElementById('source-url').value.trim();
+      if (!name || !url) return;
+
+      const submitBtn = form.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Adicionando...';
+
+      try {
+        const res = await fetch('/api/sources', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, url }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.detail || `Erro ${res.status}`);
+        }
+
+        removeEmptyState();
+        const tr = document.createElement('tr');
+        tr.dataset.sourceId = data.id;
+        tr.className = 'border-b border-neutral-800 last:border-0 hover:bg-neutral-800/50';
+        tr.innerHTML = rowHTML(data);
+        tableBody.prepend(tr);
+        form.reset();
+      } catch (err) {
+        formError.textContent = err.message;
+        formError.classList.remove('hidden');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Adicionar fonte';
+      }
+    });
+
+    tableBody.addEventListener('click', async (event) => {
+      const row = event.target.closest('tr[data-source-id]');
+      if (!row) return;
+      const sourceId = row.dataset.sourceId;
+
+      if (event.target.classList.contains('toggle-btn')) {
+        const btn = event.target;
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/sources/${sourceId}/toggle`, { method: 'PATCH' });
+          if (!res.ok) throw new Error(`Erro ${res.status}`);
+          const source = await res.json();
+          row.querySelector('.status-badge').outerHTML = statusBadgeHTML(source.active);
+        } catch (err) {
+          alert('Falha ao alternar status: ' + err.message);
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      if (event.target.classList.contains('delete-btn')) {
+        if (!confirm('Excluir esta fonte? Essa ação não pode ser desfeita.')) return;
+        const btn = event.target;
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/sources/${sourceId}`, { method: 'DELETE' });
+          if (!res.ok && res.status !== 204) throw new Error(`Erro ${res.status}`);
+          row.remove();
+          showEmptyStateIfNeeded();
+        } catch (err) {
+          alert('Falha ao excluir: ' + err.message);
+          btn.disabled = false;
+        }
+      }
+    });
+
+    tableBody.addEventListener('change', async (event) => {
+      if (!event.target.classList.contains('limit-input')) return;
+      const input = event.target;
+      const row = input.closest('tr[data-source-id]');
+      const sourceId = row.dataset.sourceId;
+      const value = parseInt(input.value, 10);
+
+      if (!Number.isFinite(value) || value < 1) {
+        input.value = input.dataset.original;
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/sources/${sourceId}/limit`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ max_daily_articles: value }),
+        });
+        if (!res.ok) throw new Error(`Erro ${res.status}`);
+        const source = await res.json();
+        input.dataset.original = source.max_daily_articles;
+      } catch (err) {
+        alert('Falha ao atualizar limite: ' + err.message);
+        input.value = input.dataset.original;
+      }
+    });
+
+    // --- Executar varredura + modal de logs ---
+    const runBtn = document.getElementById('run-pipeline-btn');
+    const openLogsBtn = document.getElementById('open-logs-btn');
+    const closeLogsBtn = document.getElementById('close-logs-btn');
+    const logsModal = document.getElementById('logs-modal');
+    const logsOutput = document.getElementById('logs-output');
+    const LOGS_POLL_MS = 2000;
+    let logsInterval = null;
+
+    async function refreshLogs() {
+      try {
+        const res = await fetch('/api/logs');
+        if (!res.ok) return;
+        const data = await res.json();
+        const nearBottom = logsOutput.scrollHeight - logsOutput.scrollTop - logsOutput.clientHeight < 40;
+        logsOutput.textContent = data.logs.length ? data.logs.join('\n') : '(sem logs ainda)';
+        if (nearBottom) {
+          logsOutput.scrollTop = logsOutput.scrollHeight;
+        }
+      } catch {
+        // painel de conveniência — uma falha aqui não deve incomodar o usuário
+      }
+    }
+
+    function openLogsModal() {
+      logsModal.classList.remove('hidden');
+      refreshLogs();
+      if (!logsInterval) {
+        logsInterval = setInterval(refreshLogs, LOGS_POLL_MS);
+      }
+    }
+
+    function closeLogsModal() {
+      logsModal.classList.add('hidden');
+      if (logsInterval) {
+        clearInterval(logsInterval);
+        logsInterval = null;
+      }
+    }
+
+    openLogsBtn.addEventListener('click', openLogsModal);
+    closeLogsBtn.addEventListener('click', closeLogsModal);
+    logsModal.addEventListener('click', (event) => {
+      if (event.target === logsModal) closeLogsModal();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !logsModal.classList.contains('hidden')) closeLogsModal();
+    });
+
+    runBtn.addEventListener('click', async () => {
+      runBtn.disabled = true;
+      const originalText = runBtn.textContent;
+      runBtn.textContent = 'Iniciando...';
+      try {
+        const res = await fetch('/trigger-pipeline', { method: 'POST' });
+        if (!res.ok) throw new Error(`Erro ${res.status}`);
+        openLogsModal();
+      } catch (err) {
+        alert('Falha ao iniciar a varredura: ' + err.message);
+      } finally {
+        setTimeout(() => {
+          runBtn.disabled = false;
+          runBtn.textContent = originalText;
+        }, 1500);
+      }
+    });
+  </script>
+</body>
+</html>

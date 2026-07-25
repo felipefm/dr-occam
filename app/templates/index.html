@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dr. Occam</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #1a1a1a;
+      --muted: #6b6b6b;
+      --border: #e0e0e0;
+      --link: #0b57d0;
+      --card-bg: #ffffff;
+      --font-scale: 1;
+    }
+    :root[data-theme="dark"] {
+      --bg: #15171b;
+      --fg: #e8e8e8;
+      --muted: #9a9a9a;
+      --border: #2a2d33;
+      --link: #7fb1ff;
+      --card-bg: #1b1e24;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #15171b;
+        --fg: #e8e8e8;
+        --muted: #9a9a9a;
+        --border: #2a2d33;
+        --link: #7fb1ff;
+        --card-bg: #1b1e24;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 1.5rem 1rem 3rem;
+      background: var(--bg);
+      color: var(--fg);
+      font-size: calc(1rem * var(--font-scale));
+      transition: background .15s ease, color .15s ease;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+      margin-bottom: 1rem;
+    }
+    h1 { font-size: 1.4em; margin: 0; }
+    h1 a { font-size: .5em; font-weight: normal; margin-left: .6em; }
+    .toolbar { display: flex; gap: .4rem; align-items: center; }
+    .toolbar button {
+      font: inherit;
+      font-size: .85em;
+      border: 1px solid var(--border);
+      background: var(--card-bg);
+      color: var(--fg);
+      border-radius: .4em;
+      padding: .35em .65em;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .toolbar button:hover { border-color: var(--link); }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .card {
+      border-bottom: 1px solid var(--border);
+      padding: 1.1em 0;
+    }
+    .card h2 { margin: 0 0 .3em; font-size: 1.1em; }
+    .card time { color: var(--muted); font-size: .85em; }
+    .card p { white-space: pre-line; margin: .6em 0; }
+    .share-row { display: flex; gap: .6em; margin-top: .5em; }
+    .share-row a {
+      font-size: .8em;
+      border: 1px solid var(--border);
+      border-radius: .4em;
+      padding: .25em .7em;
+      color: var(--muted);
+    }
+    .share-row a:hover { color: var(--link); border-color: var(--link); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Dr. Occam <a href="/admin">gerenciar fontes →</a></h1>
+    <div class="toolbar">
+      <button id="font-decrease" type="button" aria-label="Diminuir fonte" title="Diminuir fonte">A−</button>
+      <button id="font-increase" type="button" aria-label="Aumentar fonte" title="Aumentar fonte">A+</button>
+      <button id="theme-toggle" type="button" aria-label="Alternar tema claro/escuro" title="Alternar tema">🌙</button>
+    </div>
+  </header>
+
+  {% if cards %}
+    {% for card in cards %}
+    <article class="card">
+      <h2><a href="{{ card.url }}" target="_blank" rel="noopener noreferrer">{{ card.title }}</a></h2>
+      <time>{{ card.date }}</time>
+      <p>{{ card.summary }}</p>
+      <div class="share-row">
+        <a href="{{ card.whatsapp_url }}" target="_blank" rel="noopener noreferrer">Compartilhar no WhatsApp</a>
+        <a href="{{ card.telegram_url }}" target="_blank" rel="noopener noreferrer">Compartilhar no Telegram</a>
+      </div>
+    </article>
+    {% endfor %}
+  {% else %}
+    <p>Nenhum artigo processado ainda.</p>
+  {% endif %}
+
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var THEME_KEY = 'occam-theme';
+      var FONT_KEY = 'occam-font-scale';
+      var MIN_SCALE = 0.8;
+      var MAX_SCALE = 1.6;
+      var themeBtn = document.getElementById('theme-toggle');
+      var incBtn = document.getElementById('font-increase');
+      var decBtn = document.getElementById('font-decrease');
+
+      function systemPrefersDark() {
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      }
+
+      function isDark(theme) {
+        return theme === 'dark' || (theme !== 'light' && systemPrefersDark());
+      }
+
+      function applyTheme(theme) {
+        if (theme === 'dark' || theme === 'light') {
+          root.dataset.theme = theme;
+        } else {
+          delete root.dataset.theme;
+        }
+        themeBtn.textContent = isDark(theme) ? '☀️' : '🌙';
+      }
+
+      applyTheme(localStorage.getItem(THEME_KEY));
+
+      themeBtn.addEventListener('click', function () {
+        var current = root.dataset.theme || (systemPrefersDark() ? 'dark' : 'light');
+        var next = current === 'dark' ? 'light' : 'dark';
+        localStorage.setItem(THEME_KEY, next);
+        applyTheme(next);
+      });
+
+      function applyFontScale(scale) {
+        scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.round(scale * 100) / 100));
+        root.style.setProperty('--font-scale', scale);
+        localStorage.setItem(FONT_KEY, String(scale));
+      }
+
+      applyFontScale(parseFloat(localStorage.getItem(FONT_KEY)) || 1);
+
+      incBtn.addEventListener('click', function () {
+        var current = parseFloat(getComputedStyle(root).getPropertyValue('--font-scale')) || 1;
+        applyFontScale(current + 0.1);
+      });
+      decBtn.addEventListener('click', function () {
+        var current = parseFloat(getComputedStyle(root).getPropertyValue('--font-scale')) || 1;
+        applyFontScale(current - 0.1);
+      });
+    })();
+  </script>
+</body>
+</html>
