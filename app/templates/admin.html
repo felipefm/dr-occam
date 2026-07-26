@@ -19,6 +19,11 @@
           class="rounded-md bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >▶ Executar varredura</button>
         <button
+          id="reprocess-dead-btn"
+          title="Volta artigos com status DEAD para PENDING e tenta processá-los de novo"
+          class="rounded-md bg-amber-600 hover:bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >☠ Reprocessar DEAD</button>
+        <button
           id="open-logs-btn"
           class="rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors"
         >🖥 Ver logs</button>
@@ -331,6 +336,35 @@
         setTimeout(() => {
           runBtn.disabled = false;
           runBtn.textContent = originalText;
+        }, 1500);
+      }
+    });
+
+    // --- Reprocessar DEAD ---
+    const reprocessDeadBtn = document.getElementById('reprocess-dead-btn');
+
+    reprocessDeadBtn.addEventListener('click', async () => {
+      reprocessDeadBtn.disabled = true;
+      const originalText = reprocessDeadBtn.textContent;
+      reprocessDeadBtn.textContent = 'Ressuscitando...';
+      try {
+        const res = await fetch('/pipeline/reprocess-dead', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `Erro ${res.status}`);
+
+        const count = data.articles_resurrected ?? 0;
+        alert(
+          count > 0
+            ? `${count} artigo(s) DEAD ressuscitado(s) para PENDING — reprocessamento iniciado.`
+            : 'Nenhum artigo DEAD encontrado para reprocessar.'
+        );
+        if (count > 0) openLogsModal();
+      } catch (err) {
+        alert('Falha ao reprocessar artigos DEAD: ' + err.message);
+      } finally {
+        setTimeout(() => {
+          reprocessDeadBtn.disabled = false;
+          reprocessDeadBtn.textContent = originalText;
         }, 1500);
       }
     });
