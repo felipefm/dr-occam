@@ -102,7 +102,12 @@ class SourceCreatePayload(SQLModel):
 class SourceLimitPayload(SQLModel):
     max_daily_articles: int = Field(
         gt=0,
-        description="Número máximo de artigos que a ingestão pode coletar desta fonte por dia.",
+        description=(
+            "Número máximo de artigos inéditos que a ingestão coleta desta fonte por "
+            "execução do pipeline (não é um teto diário rígido: links já coletados antes "
+            "nunca são recoletados, então rodar de novo mais tarde só traz o que for "
+            "genuinamente novo no feed)."
+        ),
     )
 
 
@@ -445,11 +450,11 @@ def delete_source(source_id: int) -> Response:
 @app.put(
     "/api/sources/{source_id}/limit",
     tags=["Sources"],
-    summary="Ajustar o limite diário de artigos de uma fonte",
+    summary="Ajustar o limite de artigos coletados por execução de uma fonte",
     description=(
-        "Define o número máximo de artigos que a ingestão pode coletar dessa fonte por dia "
-        "(`Source.max_daily_articles`). Usado para conter fontes muito volumosas sem precisar "
-        "desativá-las."
+        "Define o número máximo de artigos inéditos que a ingestão coleta dessa fonte por "
+        "execução do pipeline (`Source.max_daily_articles`). Usado para conter fontes muito "
+        "volumosas sem precisar desativá-las."
     ),
     response_description="A fonte com o novo valor de `max_daily_articles`.",
 )
