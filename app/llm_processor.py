@@ -293,31 +293,9 @@ async def _process_article(
         session.commit()
 
 
-async def run_llm_processing() -> dict[str, int]:
-    """Processa um lote de artigos PENDING. Retorna contagem por desfecho."""
-    logger.info("Iniciando ciclo de processamento LLM")
-    if not LLM_CASCADE:
-        raise RuntimeError(
-            "Nenhum modelo de IA configurado. Defina ao menos LLM_MODEL_1 no .env."
-        )
-
-    with Session(engine) as session:
-        statement = (
-            select(Article.id)
-            .where(Article.status == ArticleStatus.PENDING)
-            .order_by(Article.created_at.asc())
-            .limit(BATCH_SIZE)
-        )
-        article_ids = [aid for aid in session.exec(statement).all() if aid is not None]
-
-    logger.info(
-        "Encontrados %d artigos PENDING para processar (lote máximo=%d)",
-        len(article_ids), BATCH_SIZE,
-    )
-    if not article_ids:
-        logger.info("Nenhum artigo PENDING — encerrando ciclo de processamento LLM")
-        return {"processed": 0, "dead": 0, "pending_retry": 0}
-
+async def _run_llm_batch(article_ids: list[int]) -> dict[str, int]:
+    """Processa um único lote (já selecionado) de artigos PENDING. Retorna
+    contagem por desfecho deste lote."""
     semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
     standby_queue: list[int] = []
@@ -347,13 +325,76 @@ async def run_llm_processing() -> dict[str, int]:
             .where(Article.id.in_(article_ids), Article.status == ArticleStatus.DEAD)
         ).one()
 
-    result = {
+    return {
         "processed": processed,
         "dead": dead,
         "pending_retry": len(article_ids) - processed - dead,
     }
-    logger.info("Ciclo de processamento LLM concluído: %s", result)
-    return result
+
+
+async def run_llm_processing() -> dict[str, int]:
+    """Processa TODOS os artigos PENDING existentes, em lotes sucessivos de
+    até BATCH_SIZE, até a fila esvaziar. Retorna a contagem agregada de todos
+    os lotes desta execução.
+
+    Circuito de segurança: se um lote inteiro não gerar nenhum PROCESSED nem
+    DEAD (ex.: todos os modelos da cascata fora do ar), interrompe os lotes
+    seguintes desta execução em vez de repetir os mesmos artigos em loop
+    apertado — eles continuam PENDING e serão retomados no próximo gatilho.
+    """
+    logger.info("Iniciando ciclo de processamento LLM")
+    if not LLM_CASCADE:
+        raise RuntimeError(
+            "Nenhum modelo de IA configurado. Defina ao menos LLM_MODEL_1 no .env."
+        )
+
+    total_result = {"processed": 0, "dead": 0, "pending_retry": 0}
+    batches = 0
+
+    while True:
+        with Session(engine) as session:
+            total_pending = session.exec(
+                select(func.count())
+                .select_from(Article)
+                .where(Article.status == ArticleStatus.PENDING)
+            ).one()
+
+            statement = (
+                select(Article.id)
+                .where(Article.status == ArticleStatus.PENDING)
+                .order_by(Article.created_at.asc())
+                .limit(BATCH_SIZE)
+            )
+            article_ids = [aid for aid in session.exec(statement).all() if aid is not None]
+
+        logger.info(
+            "Total de artigos PENDING na fila: %d — processando lote de %d (máximo por lote=%d)",
+            total_pending, len(article_ids), BATCH_SIZE,
+        )
+        if not article_ids:
+            break
+
+        batches += 1
+        batch_result = await _run_llm_batch(article_ids)
+        logger.info("Lote %d de processamento LLM concluído: %s", batches, batch_result)
+
+        total_result["processed"] += batch_result["processed"]
+        total_result["dead"] += batch_result["dead"]
+        total_result["pending_retry"] += batch_result["pending_retry"]
+
+        if batch_result["processed"] == 0 and batch_result["dead"] == 0:
+            logger.warning(
+                "Lote %d não avançou nenhum artigo (0 processados, 0 mortos) — "
+                "interrompendo esta execução para não repetir em loop; "
+                "os artigos restantes seguem PENDING para o próximo gatilho",
+                batches,
+            )
+            break
+
+    logger.info(
+        "Ciclo de processamento LLM concluído (%d lote(s)): %s", batches, total_result
+    )
+    return total_result
 
 
 if __name__ == "__main__":
