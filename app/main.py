@@ -4,7 +4,7 @@ import collections
 import logging
 import traceback
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from typing import Any, AsyncIterator
 from urllib.parse import quote
@@ -14,12 +14,14 @@ from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import or_
 from sqlmodel import Field, Session, SQLModel, select
 
 from database import create_db_and_tables, engine
 from ingestion import run_ingestion
 from llm_processor import run_llm_processing
-from models import Article, ArticleStatus, Source, SourceType
+from models import Article, ArticleStatus, LLMProcessingLog, Source, SourceType
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -72,6 +74,11 @@ TAGS_METADATA = [
         "name": "Sources",
         "description": "CRUD das fontes RSS usadas pela ingestão. Usado pelo painel `/admin`, "
         "mas também acessível diretamente via API.",
+    },
+    {
+        "name": "Manutenção",
+        "description": "Limpeza de dados antigos (artigos e logs de processamento por IA) "
+        "para conter o crescimento do banco de dados.",
     },
 ]
 
@@ -368,6 +375,97 @@ def admin_page(request: Request) -> Response:
 )
 def get_logs() -> dict[str, list[str]]:
     return {"logs": list(_log_buffer)}
+
+
+@app.delete(
+    "/api/articles",
+    tags=["Manutenção"],
+    summary="Apagar artigos antigos (qualquer status)",
+    description=(
+        "Remove permanentemente artigos com `created_at` mais antigo que "
+        "`older_than_days`, **independente do status** (`PENDING`/`PROCESSED`/"
+        "`DEAD`/`DEDUPLICATED`) — inclusive artigos já `PROCESSED` que "
+        "somem do feed/painel de leitura junto. Remove na mesma chamada os "
+        "registros de `llm_processing_log` associados a esses artigos, "
+        "evitando deixá-los órfãos. Ação irreversível — não há confirmação "
+        "adicional além do parâmetro `older_than_days`."
+    ),
+    response_description="Quantidade de artigos e de logs associados removidos.",
+)
+def delete_old_articles(
+    older_than_days: int = Query(
+        ..., gt=0,
+        description="Remove artigos com created_at mais antigo que esta quantidade de dias.",
+    ),
+) -> dict[str, int]:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
+
+    with Session(engine) as session:
+        article_ids = session.exec(
+            select(Article.id).where(Article.created_at < cutoff)
+        ).all()
+
+        log_ids: list[int] = []
+        if article_ids:
+            log_ids = session.exec(
+                select(LLMProcessingLog.id).where(
+                    LLMProcessingLog.article_id.in_(article_ids)
+                )
+            ).all()
+            if log_ids:
+                session.exec(sa_delete(LLMProcessingLog).where(LLMProcessingLog.id.in_(log_ids)))
+            session.exec(sa_delete(Article).where(Article.id.in_(article_ids)))
+            session.commit()
+
+    logger.info(
+        "Manutenção: %d artigo(s) e %d log(s) associado(s) removido(s) "
+        "(older_than_days=%d)",
+        len(article_ids), len(log_ids), older_than_days,
+    )
+    return {"articles_deleted": len(article_ids), "logs_deleted": len(log_ids)}
+
+
+@app.delete(
+    "/api/llm-logs",
+    tags=["Manutenção"],
+    summary="Apagar registros antigos de llm_processing_log",
+    description=(
+        "Remove permanentemente registros de `llm_processing_log` mais "
+        "antigos que `older_than_days`. Como a própria linha de log não "
+        "guarda um timestamp próprio, a idade é calculada pela data de "
+        "criação (`created_at`) do artigo associado. Também remove, na "
+        "mesma chamada, qualquer log **órfão** (cujo artigo já não existe "
+        "mais no banco). Não afeta os artigos em si, só o histórico de "
+        "chamadas à IA. Ação irreversível."
+    ),
+    response_description="Quantidade de logs removidos.",
+)
+def delete_old_llm_logs(
+    older_than_days: int = Query(
+        ..., gt=0,
+        description=(
+            "Remove logs cujo artigo associado tem created_at mais antigo que "
+            "esta quantidade de dias (além de qualquer log órfão)."
+        ),
+    ),
+) -> dict[str, int]:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
+
+    with Session(engine) as session:
+        log_ids = session.exec(
+            select(LLMProcessingLog.id)
+            .join(Article, LLMProcessingLog.article_id == Article.id, isouter=True)
+            .where(or_(Article.id.is_(None), Article.created_at < cutoff))
+        ).all()
+        if log_ids:
+            session.exec(sa_delete(LLMProcessingLog).where(LLMProcessingLog.id.in_(log_ids)))
+            session.commit()
+
+    logger.info(
+        "Manutenção: %d log(s) de llm_processing_log removido(s) (older_than_days=%d)",
+        len(log_ids), older_than_days,
+    )
+    return {"logs_deleted": len(log_ids)}
 
 
 @app.post(

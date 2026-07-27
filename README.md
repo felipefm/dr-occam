@@ -52,6 +52,8 @@ O ciclo completo (ingestão → processamento por IA) é disparado sob demanda v
 | `PUT` | `/api/sources/{id}/limit` | Atualiza `max_daily_articles` (`{"max_daily_articles": N}`). |
 | `DELETE` | `/api/sources/{id}` | Remove a fonte. |
 | `GET` | `/api/logs` | Últimas linhas de log em memória (`{"logs": [...]}`), usado pelo modal de logs do `/admin`. |
+| `DELETE` | `/api/articles?older_than_days=N` | Remove permanentemente artigos com `created_at` mais antigo que `N` dias, **qualquer status**, e os `llm_processing_log` associados a eles. Irreversível. Responde `{"articles_deleted": N, "logs_deleted": N}`. |
+| `DELETE` | `/api/llm-logs?older_than_days=N` | Remove permanentemente registros de `llm_processing_log` cujo artigo associado tem `created_at` mais antigo que `N` dias (a idade é a do artigo — o log não tem timestamp próprio), mais qualquer log órfão (artigo já apagado). Irreversível. Responde `{"logs_deleted": N}`. |
 
 ## Variáveis de ambiente (`.env`)
 
@@ -85,7 +87,7 @@ curl -X POST http://localhost:8383/trigger-pipeline
 
 ## Estado atual vs. visão do produto
 
-Já implementado: ingestão RSS, filtro anti-ruído, limite de artigos coletados por execução por fonte, extração de conteúdo in-process via trafilatura (sequencial, sem microsserviço externo), cascata de IAs com fallback automático (local + nuvem), resumo neutro via IA com log de rastreabilidade, retry/DEAD com fila standby de repescagem de timeout, reprocessamento manual de artigos `DEAD` (`/pipeline/reprocess-dead`, com botão dedicado no `/admin`), feed RSS 2.0, painel de leitura HTML, painel de administração de fontes (`/admin`, CRUD completo), gatilho manual assíncrono.
+Já implementado: ingestão RSS, filtro anti-ruído, limite de artigos coletados por execução por fonte, extração de conteúdo in-process via trafilatura (sequencial, sem microsserviço externo), cascata de IAs com fallback automático (local + nuvem), resumo neutro via IA com log de rastreabilidade, retry/DEAD com fila standby de repescagem de timeout, reprocessamento manual de artigos `DEAD` (`/pipeline/reprocess-dead`, com botão dedicado no `/admin`), feed RSS 2.0, painel de leitura HTML, painel de administração de fontes (`/admin`, CRUD completo), gatilho manual assíncrono, limpeza manual de dados antigos por idade (`DELETE /api/articles`, `DELETE /api/llm-logs`) para conter o crescimento do banco.
 
 Ainda não implementado (fazem parte da especificação de negócio original, em `negocio.md`):
 
