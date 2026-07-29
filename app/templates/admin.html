@@ -5,30 +5,96 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dr. Occam · Admin</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html, body { overflow-x: hidden; }
+
+    /* Tabela de fontes -> cards empilhados abaixo do breakpoint sm (640px) do Tailwind */
+    @media (max-width: 639px) {
+      #sources-table thead { display: none; }
+      #sources-table,
+      #sources-table tbody,
+      #sources-tbody tr,
+      #sources-table td {
+        display: block;
+        width: 100%;
+      }
+      #sources-tbody tr[data-source-id] {
+        border: 1px solid rgb(38 38 38);
+        border-radius: 0.5rem;
+        margin-bottom: 0.75rem;
+        padding: 0.75rem 1rem;
+      }
+      #sources-tbody tr[data-source-id]:last-child { margin-bottom: 0; }
+      #sources-table td {
+        border: none !important;
+        padding: 0.375rem 0 !important;
+        max-width: none !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        word-break: break-word;
+      }
+      #sources-table td[data-label]::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 0.7rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: rgb(115 115 115);
+        margin-bottom: 0.125rem;
+      }
+      #sources-table td.actions-cell {
+        display: flex;
+        gap: 0.5rem;
+        text-align: left !important;
+        padding-top: 0.5rem !important;
+      }
+      #sources-table td.actions-cell > * + * { margin-left: 0 !important; }
+      #sources-table td.actions-cell::before { display: none; }
+      #sources-table td.actions-cell .toggle-btn,
+      #sources-table td.actions-cell .delete-btn {
+        flex: 1;
+        text-align: center;
+      }
+      #empty-state td { border: none !important; }
+      #empty-state td::before { content: none; }
+    }
+  </style>
 </head>
 <body class="bg-neutral-950 text-neutral-200 min-h-screen">
-  <div class="max-w-4xl mx-auto px-4 py-10">
-    <header class="flex items-center justify-between mb-8 gap-4 flex-wrap">
-      <div>
-        <h1 class="text-xl font-semibold text-white">Dr. Occam · Fontes</h1>
-        <p class="text-sm text-neutral-500 mt-1">Gerencie os feeds RSS usados na ingestão.</p>
+  <div class="max-w-4xl mx-auto px-4 py-6 sm:py-10">
+    <header class="mb-8">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h1 class="text-xl font-semibold text-white">Dr. Occam · Fontes</h1>
+          <p class="text-sm text-neutral-500 mt-1">Gerencie os feeds RSS usados na ingestão.</p>
+        </div>
+        <button
+          id="menu-toggle-btn"
+          type="button"
+          class="sm:hidden shrink-0 flex items-center justify-center w-10 h-10 rounded-md border border-neutral-700 bg-neutral-900 text-neutral-200 text-lg"
+          aria-label="Abrir menu de ações"
+          aria-expanded="false"
+          aria-controls="header-actions"
+        >☰</button>
       </div>
-      <div class="flex items-center gap-3">
+      <div id="header-actions" class="hidden sm:flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3 mt-4">
         <button
           id="run-pipeline-btn"
-          class="rounded-md bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          class="w-full sm:w-auto rounded-md bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >▶ Executar varredura</button>
         <button
           id="reprocess-dead-btn"
           title="Volta artigos com status DEAD para PENDING e tenta processá-los de novo"
-          class="rounded-md bg-amber-600 hover:bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          class="w-full sm:w-auto rounded-md bg-amber-600 hover:bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >☠ Reprocessar DEAD</button>
         <button
           id="open-logs-btn"
-          class="rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors"
+          class="w-full sm:w-auto rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors"
         >🖥 Ver logs</button>
-        <a href="/docs" target="_blank" rel="noopener noreferrer" class="rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors">📄 API Docs</a>
-        <a href="/" class="text-sm text-neutral-400 hover:text-neutral-200 hover:underline">← Voltar para o feed</a>
+        <a href="/docs" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto text-center rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors">📄 API Docs</a>
+        <a href="/" class="w-full sm:w-auto text-center py-2 sm:py-0 sm:ml-1 text-sm text-neutral-400 hover:text-neutral-200 hover:underline">← Voltar para o feed</a>
       </div>
     </header>
 
@@ -54,50 +120,52 @@
     </section>
 
     <section class="bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="text-left text-neutral-400 border-b border-neutral-800 bg-neutral-900/60">
-            <th class="px-4 py-3 font-medium">Nome</th>
-            <th class="px-4 py-3 font-medium">URL</th>
-            <th class="px-4 py-3 font-medium">Status</th>
-            <th class="px-4 py-3 font-medium">Limite por execução</th>
-            <th class="px-4 py-3 font-medium text-right">Ações</th>
-          </tr>
-        </thead>
-        <tbody id="sources-tbody">
-          {% for source in sources %}
-          <tr data-source-id="{{ source.id }}" class="border-b border-neutral-800 last:border-0 hover:bg-neutral-800/50">
-            <td class="px-4 py-3 text-neutral-200 whitespace-nowrap">{{ source.name }}</td>
-            <td class="px-4 py-3 text-neutral-400 max-w-xs truncate">
-              {% if source.url.startswith('http://') or source.url.startswith('https://') %}
-              <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.url }}</a>
-              {% else %}
-              {{ source.url }}
-              {% endif %}
-            </td>
-            <td class="px-4 py-3">
-              <span class="status-badge inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {{ 'bg-emerald-500/10 text-emerald-400' if source.active else 'bg-neutral-700 text-neutral-400' }}">
-                {{ 'Ativo' if source.active else 'Inativo' }}
-              </span>
-            </td>
-            <td class="px-4 py-3">
-              <input
-                type="number" min="1" class="limit-input w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                value="{{ source.max_daily_articles }}" data-original="{{ source.max_daily_articles }}"
-              >
-            </td>
-            <td class="px-4 py-3 text-right whitespace-nowrap space-x-2">
-              <button class="toggle-btn rounded-md px-3 py-1 text-xs font-medium bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition-colors">Alternar</button>
-              <button class="delete-btn rounded-md px-3 py-1 text-xs font-medium bg-red-600/20 hover:bg-red-600/30 text-red-400 transition-colors">Excluir</button>
-            </td>
-          </tr>
-          {% else %}
-          <tr id="empty-state">
-            <td colspan="5" class="px-4 py-10 text-center text-neutral-500">Nenhuma fonte cadastrada ainda.</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="overflow-x-auto">
+        <table id="sources-table" class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-neutral-400 border-b border-neutral-800 bg-neutral-900/60">
+              <th class="px-4 py-3 font-medium">Nome</th>
+              <th class="px-4 py-3 font-medium">URL</th>
+              <th class="px-4 py-3 font-medium whitespace-nowrap">Status</th>
+              <th class="px-4 py-3 font-medium whitespace-nowrap">Limite por execução</th>
+              <th class="px-4 py-3 font-medium text-right whitespace-nowrap min-w-[150px]">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="sources-tbody">
+            {% for source in sources %}
+            <tr data-source-id="{{ source.id }}" class="border-b border-neutral-800 last:border-0 hover:bg-neutral-800/50">
+              <td data-label="Nome" class="px-4 py-3 text-neutral-200 max-w-[160px] truncate" title="{{ source.name }}">{{ source.name }}</td>
+              <td data-label="URL" class="px-4 py-3 text-neutral-400 max-w-[220px] truncate" title="{{ source.url }}">
+                {% if source.url.startswith('http://') or source.url.startswith('https://') %}
+                <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.url }}</a>
+                {% else %}
+                {{ source.url }}
+                {% endif %}
+              </td>
+              <td data-label="Status" class="px-4 py-3">
+                <span class="status-badge inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {{ 'bg-emerald-500/10 text-emerald-400' if source.active else 'bg-neutral-700 text-neutral-400' }}">
+                  {{ 'Ativo' if source.active else 'Inativo' }}
+                </span>
+              </td>
+              <td data-label="Limite por execução" class="px-4 py-3">
+                <input
+                  type="number" min="1" class="limit-input w-24 sm:w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value="{{ source.max_daily_articles }}" data-original="{{ source.max_daily_articles }}"
+                >
+              </td>
+              <td data-label="Ações" class="actions-cell px-4 py-3 text-right whitespace-nowrap space-x-2 min-w-[150px]">
+                <button class="toggle-btn rounded-md px-3 py-1 text-xs font-medium bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition-colors">Alternar</button>
+                <button class="delete-btn rounded-md px-3 py-1 text-xs font-medium bg-red-600/20 hover:bg-red-600/30 text-red-400 transition-colors">Excluir</button>
+              </td>
+            </tr>
+            {% else %}
+            <tr id="empty-state">
+              <td colspan="5" class="px-4 py-10 text-center text-neutral-500">Nenhuma fonte cadastrada ainda.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </section>
   </div>
 
@@ -146,13 +214,13 @@
 
     function rowHTML(source) {
       return `
-        <td class="px-4 py-3 text-neutral-200 whitespace-nowrap">${escapeHtml(source.name)}</td>
-        <td class="px-4 py-3 text-neutral-400 max-w-xs truncate">${urlCellHTML(source.url)}</td>
-        <td class="px-4 py-3">${statusBadgeHTML(source.active)}</td>
-        <td class="px-4 py-3">
-          <input type="number" min="1" class="limit-input w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" value="${source.max_daily_articles}" data-original="${source.max_daily_articles}">
+        <td data-label="Nome" class="px-4 py-3 text-neutral-200 max-w-[160px] truncate" title="${escapeHtml(source.name)}">${escapeHtml(source.name)}</td>
+        <td data-label="URL" class="px-4 py-3 text-neutral-400 max-w-[220px] truncate" title="${escapeHtml(source.url)}">${urlCellHTML(source.url)}</td>
+        <td data-label="Status" class="px-4 py-3">${statusBadgeHTML(source.active)}</td>
+        <td data-label="Limite por execução" class="px-4 py-3">
+          <input type="number" min="1" class="limit-input w-24 sm:w-20 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1 text-sm text-neutral-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" value="${source.max_daily_articles}" data-original="${source.max_daily_articles}">
         </td>
-        <td class="px-4 py-3 text-right whitespace-nowrap space-x-2">
+        <td data-label="Ações" class="actions-cell px-4 py-3 text-right whitespace-nowrap space-x-2 min-w-[150px]">
           <button class="toggle-btn rounded-md px-3 py-1 text-xs font-medium bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition-colors">Alternar</button>
           <button class="delete-btn rounded-md px-3 py-1 text-xs font-medium bg-red-600/20 hover:bg-red-600/30 text-red-400 transition-colors">Excluir</button>
         </td>
@@ -271,6 +339,18 @@
         alert('Falha ao atualizar limite: ' + err.message);
         input.value = input.dataset.original;
       }
+    });
+
+    // --- Menu hambúrguer (mobile) ---
+    const menuToggleBtn = document.getElementById('menu-toggle-btn');
+    const headerActions = document.getElementById('header-actions');
+
+    menuToggleBtn.addEventListener('click', () => {
+      const willOpen = headerActions.classList.contains('hidden');
+      headerActions.classList.toggle('hidden', !willOpen);
+      headerActions.classList.toggle('flex', willOpen);
+      menuToggleBtn.setAttribute('aria-expanded', String(willOpen));
+      menuToggleBtn.textContent = willOpen ? '✕' : '☰';
     });
 
     // --- Executar varredura + modal de logs ---
