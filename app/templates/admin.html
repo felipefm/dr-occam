@@ -60,11 +60,19 @@
       #empty-state td { border: none !important; }
       #empty-state td::before { content: none; }
     }
+
+    /* Accordion nativo (<details>) do agendamento — remove o marcador padrão do navegador */
+    #schedule-details summary { list-style: none; }
+    #schedule-details summary::-webkit-details-marker { display: none; }
   </style>
 </head>
 <body class="bg-neutral-950 text-neutral-200 min-h-screen">
   <div class="max-w-4xl mx-auto px-4 py-6 sm:py-10">
     <header class="mb-8">
+      <a
+        href="/"
+        class="inline-flex items-center gap-1.5 -ml-2 mb-3 px-2 py-1 rounded-md text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/60 transition-colors"
+      ><span aria-hidden="true">←</span> Voltar para o feed</a>
       <div class="flex items-start justify-between gap-4">
         <div>
           <h1 class="text-xl font-semibold text-white">Dr. Occam · Fontes</h1>
@@ -94,7 +102,6 @@
           class="w-full sm:w-auto rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors"
         >🖥 Ver logs</button>
         <a href="/docs" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto text-center rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors">📄 API Docs</a>
-        <a href="/" class="w-full sm:w-auto text-center py-2 sm:py-0 sm:ml-1 text-sm text-neutral-400 hover:text-neutral-200 hover:underline">← Voltar para o feed</a>
       </div>
     </header>
 
@@ -118,6 +125,54 @@
       </form>
       <p id="form-error" class="hidden mt-3 text-sm text-red-400"></p>
     </section>
+
+    <details id="schedule-details" class="group bg-neutral-900 border border-neutral-800 rounded-lg mb-8 overflow-hidden">
+      <summary class="flex items-center justify-between gap-4 px-5 py-4 cursor-pointer select-none hover:bg-neutral-800/40 rounded-lg transition-colors">
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="text-lg shrink-0" aria-hidden="true">🕒</span>
+          <h3 class="text-base font-semibold text-white truncate">Agendamento automático</h3>
+          <span id="schedule-badge" class="shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {{ 'bg-emerald-500/10 text-emerald-400' if schedule.enabled else 'bg-neutral-700 text-neutral-400' }}">
+            {{ 'Ativado' if schedule.enabled else 'Manual' }}
+          </span>
+        </div>
+        <span class="shrink-0 text-neutral-500 transition-transform duration-200 group-open:rotate-180" aria-hidden="true">▾</span>
+      </summary>
+
+      <div class="border-t border-neutral-800 px-5 py-5">
+        <div class="flex items-center justify-between gap-4 mb-3">
+          <span class="text-sm text-neutral-300">Ativar execução automática</span>
+          <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+            <input id="schedule-enabled" type="checkbox" autocomplete="off" class="sr-only peer" {{ 'checked' if schedule.enabled else '' }}>
+            <span class="w-10 h-6 rounded-full bg-neutral-700 peer-checked:bg-emerald-600 transition-colors relative shrink-0">
+              <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform peer-checked:translate-x-4"></span>
+            </span>
+          </label>
+        </div>
+        <p class="text-xs text-neutral-500 mb-4">
+          Quando ativado, a varredura roda sozinha nos horários abaixo (horário de Brasília).
+          Quando desativado, só dispara pelo botão "Executar varredura".
+        </p>
+
+        <div id="schedule-times" class="flex flex-col gap-2 mb-3">
+          {% for time in schedule.times %}
+          <div class="schedule-time-row flex items-center gap-2">
+            <input
+              type="time" value="{{ time }}"
+              class="schedule-time-input rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+            <button type="button" class="remove-time-btn shrink-0 rounded-md px-3 py-2 text-xs font-medium bg-red-600/20 hover:bg-red-600/30 text-red-400 transition-colors">Remover</button>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-2 sm:gap-3">
+          <button id="add-time-btn" type="button" class="w-full sm:w-auto rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors">+ Adicionar horário</button>
+          <button id="save-schedule-btn" type="button" class="w-full sm:w-auto rounded-md bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Salvar agendamento</button>
+        </div>
+        <p id="schedule-error" class="hidden mt-3 text-sm text-red-400"></p>
+        <p id="schedule-status" class="mt-3 text-sm text-neutral-500"></p>
+      </div>
+    </details>
 
     <section class="bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden">
       <div class="overflow-x-auto">
@@ -338,6 +393,113 @@
       } catch (err) {
         alert('Falha ao atualizar limite: ' + err.message);
         input.value = input.dataset.original;
+      }
+    });
+
+    // --- Agendamento automático ---
+    const scheduleEnabled = document.getElementById('schedule-enabled');
+    const scheduleTimesContainer = document.getElementById('schedule-times');
+    const addTimeBtn = document.getElementById('add-time-btn');
+    const saveScheduleBtn = document.getElementById('save-schedule-btn');
+    const scheduleError = document.getElementById('schedule-error');
+    const scheduleStatus = document.getElementById('schedule-status');
+    const scheduleBadge = document.getElementById('schedule-badge');
+
+    function createTimeRow(value) {
+      const row = document.createElement('div');
+      row.className = 'schedule-time-row flex items-center gap-2';
+      row.innerHTML = `
+        <input type="time" value="${value || ''}" class="schedule-time-input rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <button type="button" class="remove-time-btn shrink-0 rounded-md px-3 py-2 text-xs font-medium bg-red-600/20 hover:bg-red-600/30 text-red-400 transition-colors">Remover</button>
+      `;
+      return row;
+    }
+
+    function currentScheduleTimes() {
+      return Array.from(scheduleTimesContainer.querySelectorAll('.schedule-time-input'))
+        .map((input) => input.value)
+        .filter(Boolean);
+    }
+
+    function updateScheduleStatusText(enabled, times) {
+      const active = enabled && times.length > 0;
+      scheduleStatus.textContent = active
+        ? `Automático — roda todo dia às ${times.join(', ')} (horário de Brasília).`
+        : 'Modo manual — a varredura só roda pelo botão "Executar varredura".';
+      scheduleBadge.textContent = active ? 'Ativado' : 'Manual';
+      scheduleBadge.className = 'shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium '
+        + (active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-neutral-700 text-neutral-400');
+    }
+
+    addTimeBtn.addEventListener('click', () => {
+      scheduleTimesContainer.appendChild(createTimeRow());
+    });
+
+    scheduleTimesContainer.addEventListener('click', (event) => {
+      if (event.target.classList.contains('remove-time-btn')) {
+        event.target.closest('.schedule-time-row').remove();
+      }
+    });
+
+    saveScheduleBtn.addEventListener('click', async () => {
+      scheduleError.classList.add('hidden');
+      const enabled = scheduleEnabled.checked;
+      const times = currentScheduleTimes();
+
+      if (enabled && times.length === 0) {
+        scheduleError.textContent = 'Informe ao menos um horário para ativar o agendamento.';
+        scheduleError.classList.remove('hidden');
+        return;
+      }
+
+      saveScheduleBtn.disabled = true;
+      const originalText = saveScheduleBtn.textContent;
+      saveScheduleBtn.textContent = 'Salvando...';
+
+      try {
+        const res = await fetch('/api/schedule', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled, times }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `Erro ${res.status}`);
+        updateScheduleStatusText(data.enabled, data.times);
+      } catch (err) {
+        scheduleError.textContent = err.message;
+        scheduleError.classList.remove('hidden');
+      } finally {
+        saveScheduleBtn.disabled = false;
+        saveScheduleBtn.textContent = originalText;
+      }
+    });
+
+    updateScheduleStatusText(scheduleEnabled.checked, currentScheduleTimes());
+
+    // Alguns navegadores mobile restauram o estado de checkboxes de uma aba
+    // suspensa (troca de app/bloqueio de tela) em vez de respeitar o HTML
+    // recém-renderizado pelo servidor — o campo "Ativado" podia ficar
+    // dessincronizado mesmo com os horários corretos. `pageshow` com
+    // `persisted: true` identifica essa restauração (bfcache) e força a
+    // releitura do estado real via API.
+    async function refreshScheduleFromServer() {
+      try {
+        const res = await fetch('/api/schedule', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+
+        scheduleEnabled.checked = data.enabled;
+        scheduleTimesContainer.innerHTML = '';
+        data.times.forEach((time) => scheduleTimesContainer.appendChild(createTimeRow(time)));
+        updateScheduleStatusText(data.enabled, data.times);
+      } catch {
+        // se a rede falhar aqui, mantém o que já está na tela
+      }
+    }
+
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted) {
+        refreshScheduleFromServer();
       }
     });
 

@@ -2,6 +2,7 @@
 
 import collections
 import logging
+import re
 import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -18,10 +19,11 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import or_
 from sqlmodel import Field, Session, SQLModel, select
 
+import scheduler as scheduler_service
 from database import create_db_and_tables, engine
-from ingestion import run_ingestion
 from llm_processor import run_llm_processing
-from models import Article, ArticleStatus, LLMProcessingLog, Source, SourceType
+from models import Article, ArticleStatus, LLMProcessingLog, ScheduleConfig, Source, SourceType
+from pipeline import run_pipeline
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -54,7 +56,9 @@ DISPLAY_TIMEZONE = ZoneInfo("America/Sao_Paulo")
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     create_db_and_tables()
+    scheduler_service.start_scheduler()
     yield
+    scheduler_service.shutdown_scheduler()
 
 
 TAGS_METADATA = [
@@ -79,6 +83,11 @@ TAGS_METADATA = [
         "name": "Manutenção",
         "description": "Limpeza de dados antigos (artigos e logs de processamento por IA) "
         "para conter o crescimento do banco de dados.",
+    },
+    {
+        "name": "Agendamento",
+        "description": "Configuração do agendador interno que dispara o pipeline "
+        "automaticamente em horários definidos, sem depender do cron do SO.",
     },
 ]
 
@@ -118,6 +127,49 @@ class SourceLimitPayload(SQLModel):
     )
 
 
+MAX_SCHEDULE_TIMES = 12
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+
+class ScheduleConfigPayload(SQLModel):
+    enabled: bool = Field(
+        description=(
+            "Se True, o pipeline roda automaticamente nos horários listados em `times`. "
+            "Se False, modo manual — o pipeline só é disparado via POST /trigger-pipeline "
+            "(inclusive pelo botão 'Executar varredura' do /admin)."
+        )
+    )
+    times: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Horários no formato 'HH:MM' (24h), interpretados no fuso America/Sao_Paulo. "
+            "Um horário = execução única diária; vários horários = múltiplas execuções "
+            "por dia. Ignorado quando enabled=False. Máximo de "
+            f"{MAX_SCHEDULE_TIMES} horários."
+        ),
+    )
+
+
+def _validate_schedule_times(times: list[str]) -> list[str]:
+    if len(times) > MAX_SCHEDULE_TIMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Máximo de {MAX_SCHEDULE_TIMES} horários agendados por dia",
+        )
+
+    for t in times:
+        if not _TIME_RE.match(t):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Horário inválido: '{t}' — use o formato HH:MM (24h)",
+            )
+
+    if len(set(times)) != len(times):
+        raise HTTPException(status_code=422, detail="Horários duplicados não são permitidos")
+
+    return sorted(times)
+
+
 def _format_summary(article: Article) -> str:
     summary = article.ai_summary or ""
     if article.is_truncated:
@@ -148,23 +200,6 @@ def _telegram_share_url(title: str, summary: str, url: str) -> str:
     return f"https://t.me/share/url?url={quote(url)}&text={quote(text)}"
 
 
-async def _run_pipeline() -> None:
-    logger.info("Pipeline: gatilho recebido, iniciando execução em background")
-    try:
-        logger.info("Pipeline: iniciando etapa de ingestão")
-        ingestion_summary = await run_ingestion()
-        logger.info("Pipeline: ingestão concluída: %s", ingestion_summary)
-
-        logger.info("Pipeline: iniciando etapa de processamento LLM")
-        llm_summary = await run_llm_processing()
-        logger.info("Pipeline: processamento LLM concluído: %s", llm_summary)
-
-        logger.info("Pipeline: execução finalizada com sucesso")
-    except Exception as e:
-        logger.error("Pipeline: falha durante a execução: %s", e)
-        traceback.print_exc()
-
-
 @app.post(
     "/trigger-pipeline",
     status_code=202,
@@ -182,7 +217,7 @@ async def _run_pipeline() -> None:
     response_description="Confirmação de que o pipeline foi agendado para execução em background.",
 )
 async def trigger_pipeline(background_tasks: BackgroundTasks) -> dict[str, str]:
-    background_tasks.add_task(_run_pipeline)
+    background_tasks.add_task(run_pipeline)
     return {"message": "Pipeline iniciado"}
 
 
@@ -357,8 +392,9 @@ def homepage(request: Request) -> Response:
 def admin_page(request: Request) -> Response:
     with Session(engine) as session:
         sources = session.exec(select(Source).order_by(Source.id)).all()
+    schedule = scheduler_service.load_schedule_from_db()
     return templates.TemplateResponse(
-        request=request, name="admin.html", context={"sources": sources}
+        request=request, name="admin.html", context={"sources": sources, "schedule": schedule}
     )
 
 
@@ -571,3 +607,65 @@ def update_source_limit(source_id: int, payload: SourceLimitPayload) -> Source:
             source.name, source.id, source.max_daily_articles,
         )
         return source
+
+
+@app.get(
+    "/api/schedule",
+    tags=["Agendamento"],
+    summary="Consultar a configuração do agendador automático",
+    description=(
+        "Retorna o estado atual do agendador interno: se está ligado (`enabled`) e, "
+        "se sim, em quais horários (`times`, formato `HH:MM`, fuso America/Sao_Paulo) "
+        "o pipeline é disparado automaticamente. Com `enabled=false`, o pipeline só "
+        "roda via `POST /trigger-pipeline` (disparo manual)."
+    ),
+    response_description="Configuração atual do agendador.",
+)
+def get_schedule() -> ScheduleConfig:
+    return scheduler_service.load_schedule_from_db()
+
+
+@app.put(
+    "/api/schedule",
+    tags=["Agendamento"],
+    summary="Atualizar a configuração do agendador automático",
+    description=(
+        "Substitui a configuração do agendador interno (persistida em banco, sobrevive "
+        "a reinícios do container) e reconfigura os jobs em tempo real — não é preciso "
+        "reiniciar a aplicação. Três modos possíveis, decididos pelos campos enviados:\n\n"
+        "- **Desativado** (`enabled=false`): pipeline só roda via disparo manual.\n"
+        "- **Execução única diária** (`enabled=true`, `times` com 1 horário): ex. "
+        "`[\"06:00\"]`.\n"
+        "- **Múltiplas execuções por dia** (`enabled=true`, `times` com vários horários): "
+        "ex. `[\"08:00\", \"14:00\", \"20:00\"]`.\n\n"
+        "Os horários usam o fuso America/Sao_Paulo e não podem se repetir "
+        f"(máximo de {MAX_SCHEDULE_TIMES})."
+    ),
+    response_description="A configuração salva, já refletindo os jobs recém-aplicados.",
+)
+def update_schedule(payload: ScheduleConfigPayload) -> ScheduleConfig:
+    times = _validate_schedule_times(payload.times)
+    if payload.enabled and not times:
+        raise HTTPException(
+            status_code=422,
+            detail="Informe ao menos um horário para ativar o agendamento automático",
+        )
+
+    with Session(engine) as session:
+        config = session.exec(select(ScheduleConfig)).first()
+        if config is None:
+            config = ScheduleConfig()
+
+        config.enabled = payload.enabled
+        config.times = times
+        config.updated_at = datetime.now(timezone.utc)
+        session.add(config)
+        session.commit()
+        session.refresh(config)
+
+    scheduler_service.apply_schedule(config)
+    logger.info(
+        "Agendador: configuração atualizada via /admin (enabled=%s, times=%s)",
+        config.enabled, config.times,
+    )
+    return config

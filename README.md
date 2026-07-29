@@ -24,19 +24,40 @@ O `docker-compose.yml` sobe dois containers:
 
 Template Jinja2 (`app/templates/admin.html`) servido pelo próprio FastAPI, sem build step — Tailwind CSS via CDN (`cdn.tailwindcss.com`) para o estilo e JavaScript puro (`fetch`) para o CRUD, sem nenhum framework frontend. A lista inicial é renderizada no servidor; toda ação (adicionar, alternar status, editar limite, excluir) chama a API REST correspondente e atualiza só a linha afetada no DOM, sem recarregar a página. Fontes são sempre criadas como `RSS` (o formulário só pede nome + URL); o campo `source_type` fica de fora do formulário porque a extração de links só é implementada para `RSS`.
 
+Layout responsivo: abaixo de 640px a tabela de fontes vira uma lista de cards empilhados (cada `<td>` reaparece com um rótulo, via `data-label` + CSS), e o menu de ações do topo colapsa atrás de um botão hambúrguer — sem overflow horizontal indesejado nem botões cortados. O link **"← Voltar para o feed"** fica fora desse menu de ações, como link de navegação persistente sempre visível acima do título (não depende do hambúrguer nem compete visualmente com os botões de ação).
+
 O `/admin` também tem um botão **"Executar varredura"** (dispara `POST /trigger-pipeline`), um botão **"☠ Reprocessar DEAD"** (dispara `POST /pipeline/reprocess-dead`, ressuscitando até 20 artigos `DEAD` para `PENDING` e reprocessando-os) e um botão **"Ver logs"** que abre um modal estilo terminal (preto/verde) com as últimas linhas de log da aplicação, atualizando por polling (`GET /api/logs`, a cada 2s) enquanto o modal estiver aberto — dá pra acompanhar o pipeline rodando sem precisar de `docker logs` no terminal. Os logs ficam num buffer em memória (`collections.deque`, últimas 500 linhas, `app/main.py`); reiniciar o container zera o histórico.
+
+A seção **"🕒 Agendamento automático"** (um accordeon `<details>` nativo, recolhido por padrão, com um badge "Ativado"/"Manual" visível mesmo fechado) configura o agendador interno descrito na próxima seção — liga/desliga e lista de horários `HH:MM`, salvos via `PUT /api/schedule`. Detalhe de robustez: alguns navegadores mobile restauram o estado de checkboxes de uma aba suspensa (troca de app/bloqueio de tela) em vez de refletir o HTML atual do servidor; para evitar o badge mostrar "Manual" quando na verdade está ativado (ou vice-versa), a página reconsulta `GET /api/schedule` sempre que volta de um estado suspenso (evento `pageshow` com `persisted: true`).
+
+### Agendador automático (`app/scheduler.py`)
+
+O pipeline pode rodar sozinho, em horários configuráveis, **sem depender do cron do sistema operacional hospedeiro**. Implementado com `APScheduler` (`AsyncIOScheduler`, acoplado ao mesmo event loop do `uvicorn`) — cada horário configurado vira um `CronTrigger` com timezone fixo em `America/Sao_Paulo`, independente do fuso do host/container.
+
+A configuração (`enabled` + lista de horários `times`) é persistida na tabela `schedule_config` (linha única) e recarregada do banco no `lifespan` de startup do FastAPI (`start_scheduler()`) — sobrevive a reinícios do container. É editável em tempo real pelo `/admin` ou via API (`GET`/`PUT /api/schedule`); salvar reconfigura os jobs na hora, sem reiniciar o processo.
+
+Três modos possíveis, todos com o mesmo mecanismo (só muda a quantidade de horários):
+
+- **Manual** (`enabled=false`): pipeline só dispara via `POST /trigger-pipeline` / botão "Executar varredura".
+- **Execução única diária** (`enabled=true`, 1 horário): ex. `["06:00"]`.
+- **Múltiplas execuções por dia** (`enabled=true`, vários horários): ex. `["08:00", "14:00", "20:00"]`.
+
+Cada job usa `max_instances=1` e `coalesce=True` — nunca duas execuções do mesmo horário sobrepostas, e se o container ficou fora do ar e perdeu disparos, roda só uma vez ao voltar (não empilha reexecuções perdidas). O disparo em si (`run_pipeline()`) mora em `app/pipeline.py`, um único ponto de entrada reaproveitado tanto pelo agendador quanto pelo `POST /trigger-pipeline` manual — a lógica de ingestão/processamento não muda, só passa a ter um único lugar que a aciona.
+
+**Pressuposto importante:** assume um único processo/worker `uvicorn` (é como o `Dockerfile` já sobe a aplicação hoje). Com múltiplos workers, cada um teria seu próprio agendador em memória e o pipeline disparia em duplicidade — se isso mudar no futuro, o agendamento precisa migrar pra um processo dedicado.
 
 ### Cascata de IAs (fallback)
 
 `llm_processor.py` lê modelos numerados do ambiente (`LLM_MODEL_1`, `LLM_MODEL_2`, ...) e monta a cascata nativa de `fallbacks` do `litellm`: a chamada usa o modelo `1` como primário; se ele falhar (conexão recusada, timeout, rate limit etc.), o `litellm` tenta o `2`, depois o `3`, e assim por diante — de forma automática e silenciosa, sem que isso conte como falha de processamento do artigo (só falha de verdade se **todos** os modelos da cascata falharem). Cada modelo pode ter seu próprio `LLM_API_BASE_N`/`LLM_API_KEY_N`, o que permite misturar um LLM local (ex.: LM Studio numa outra máquina da rede, nem sempre ligada) com APIs comerciais na nuvem como fallback. `LLM_TIMEOUT_SECONDS` garante que uma máquina local desligada não trave a cascata por muito tempo antes de cair para o próximo modelo.
 
-O ciclo completo (ingestão → processamento por IA) é disparado sob demanda via `POST /trigger-pipeline`, que roda em background e responde imediatamente.
+O ciclo completo (ingestão → processamento por IA) é disparado sob demanda via `POST /trigger-pipeline` (roda em background e responde imediatamente) ou automaticamente pelo agendador interno descrito acima.
 
 ## Modelo de dados
 
 - **`source`**: fontes cadastradas (nome, URL, tipo `RSS`/`HTML_SCRAPE`, ativa, limite de artigos inéditos coletados por execução — `max_daily_articles`).
 - **`article`**: cada notícia coletada — conteúdo original, status (`PENDING`/`PROCESSED`/`DEAD`/`DEDUPLICATED`), título e resumo gerados pela IA, `cluster_id`, contagem de tentativas e flag de truncamento. O enum de status também tem um valor `ARCHIVED`, mas é legado: era usado por um soft delete automático por cota diária que foi removido (arquivava artigos `PENDING` antes do LLM processá-los); nenhum código atual produz esse status, ele só existe pra não quebrar a leitura de linhas antigas já gravadas com ele.
 - **`llm_processing_log`**: rastreabilidade de cada chamada de IA feita sobre um artigo (provider, versão do prompt, tokens consumidos, status).
+- **`schedule_config`**: configuração persistida do agendador automático (linha única) — `enabled` e a lista `times` (horários `HH:MM`, formato `JSON`).
 
 ## Endpoints
 
@@ -52,6 +73,8 @@ O ciclo completo (ingestão → processamento por IA) é disparado sob demanda v
 | `PUT` | `/api/sources/{id}/limit` | Atualiza `max_daily_articles` (`{"max_daily_articles": N}`). |
 | `DELETE` | `/api/sources/{id}` | Remove a fonte. |
 | `GET` | `/api/logs` | Últimas linhas de log em memória (`{"logs": [...]}`), usado pelo modal de logs do `/admin`. |
+| `GET` | `/api/schedule` | Consulta a configuração do agendador automático (`{"enabled": bool, "times": [...]}`). |
+| `PUT` | `/api/schedule` | Atualiza a configuração do agendador (liga/desliga e horários `HH:MM`, fuso `America/Sao_Paulo`) e reconfigura os jobs em tempo real, sem reiniciar o processo. |
 | `DELETE` | `/api/articles?older_than_days=N` | Remove permanentemente artigos com `created_at` mais antigo que `N` dias, **qualquer status**, e os `llm_processing_log` associados a eles. Irreversível. Responde `{"articles_deleted": N, "logs_deleted": N}`. |
 | `DELETE` | `/api/llm-logs?older_than_days=N` | Remove permanentemente registros de `llm_processing_log` cujo artigo associado tem `created_at` mais antigo que `N` dias (a idade é a do artigo — o log não tem timestamp próprio), mais qualquer log órfão (artigo já apagado). Irreversível. Responde `{"logs_deleted": N}`. |
 
@@ -87,7 +110,7 @@ curl -X POST http://localhost:8383/trigger-pipeline
 
 ## Estado atual vs. visão do produto
 
-Já implementado: ingestão RSS, filtro anti-ruído, limite de artigos coletados por execução por fonte, extração de conteúdo in-process via trafilatura (sequencial, sem microsserviço externo), cascata de IAs com fallback automático (local + nuvem), resumo neutro via IA com log de rastreabilidade, retry/DEAD com fila standby de repescagem de timeout, reprocessamento manual de artigos `DEAD` (`/pipeline/reprocess-dead`, com botão dedicado no `/admin`), feed RSS 2.0, painel de leitura HTML, painel de administração de fontes (`/admin`, CRUD completo), gatilho manual assíncrono, limpeza manual de dados antigos por idade (`DELETE /api/articles`, `DELETE /api/llm-logs`) para conter o crescimento do banco.
+Já implementado: ingestão RSS, filtro anti-ruído, limite de artigos coletados por execução por fonte, extração de conteúdo in-process via trafilatura (sequencial, sem microsserviço externo), cascata de IAs com fallback automático (local + nuvem), resumo neutro via IA com log de rastreabilidade, retry/DEAD com fila standby de repescagem de timeout, reprocessamento manual de artigos `DEAD` (`/pipeline/reprocess-dead`, com botão dedicado no `/admin`), feed RSS 2.0, painel de leitura HTML, painel de administração de fontes (`/admin`, CRUD completo, responsivo em mobile), agendador automático interno via `APScheduler` configurável pelo `/admin` (manual, diário ou múltiplas vezes ao dia, persistido em banco e reconfigurável sem restart), gatilho manual assíncrono, limpeza manual de dados antigos por idade (`DELETE /api/articles`, `DELETE /api/llm-logs`) para conter o crescimento do banco.
 
 Ainda não implementado (fazem parte da especificação de negócio original, em `negocio.md`):
 
@@ -96,6 +119,10 @@ Ainda não implementado (fazem parte da especificação de negócio original, em
 - **Tradução explícita** de fontes multi-idioma como etapa dedicada do pipeline.
 - **Fontes `HTML_SCRAPE`** — o schema já suporta o tipo, mas nem o `/admin` (o formulário só cria `RSS`) nem a ingestão (que só sabe extrair links de `RSS`) têm esse caminho implementado.
 - **Etiqueta de rastreio no painel de leitura** ("Processado por: X | Prompt: vY") — o dado já é gravado em `llm_processing_log`, mas ainda não aparece na UI pública.
+
+### Ideia futura: campo de busca inteligente
+
+Pedido do usuário, ainda não desenhado/implementado: um campo de busca no painel de leitura (`/`) que encontre artigos não só por correspondência exata de texto, mas também por **termos correlatos** (sinônimos, temas relacionados) — usando a mesma cascata de IA (`litellm`) já configurada em `app/llm_processor.py`, em vez de subir um serviço de busca/embeddings à parte. Precisa de desenho antes de implementar: onde cachear/indexar (evitar chamar a IA a cada tecla digitada), e se a resposta usa busca textual simples (SQLite `LIKE`/FTS5) como primeira camada, com a IA entrando só para expandir termos da consulta ou para casos sem resultado direto.
 
 ### Ideia futura: auto-detecção de rota RSSHub ao cadastrar fonte
 

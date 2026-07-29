@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import Column, Text, Uuid
+from sqlalchemy import JSON, Column, Text, Uuid
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -76,6 +76,22 @@ class Article(SQLModel, table=True):
 
     source: Source | None = Relationship(back_populates="articles")
     processing_logs: list["LLMProcessingLog"] = Relationship(back_populates="article")
+
+
+class ScheduleConfig(SQLModel, table=True):
+    """Configuração persistida do agendador interno do pipeline (ver
+    scheduler.py). Linha única na tabela — sempre lida/gravada por inteiro,
+    nunca por múltiplas linhas concorrentes."""
+
+    __tablename__ = "schedule_config"
+
+    id: int | None = Field(default=None, primary_key=True)
+    enabled: bool = Field(default=False, nullable=False)
+    # Horários no formato "HH:MM" (24h), interpretados no fuso
+    # America/Sao_Paulo pelo agendador. Lista vazia + enabled=False = modo
+    # manual (só dispara via POST /trigger-pipeline).
+    times: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
 class LLMProcessingLog(SQLModel, table=True):
