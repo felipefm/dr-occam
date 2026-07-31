@@ -212,7 +212,7 @@ Ainda não implementado (fazem parte da especificação de negócio original, em
 - **Tradução explícita** de fontes multi-idioma como etapa dedicada do pipeline.
 - **Fontes `HTML_SCRAPE`** — o schema já suporta o tipo, mas nem o `/admin` (o formulário só cria `RSS`) nem a ingestão (que só sabe extrair links de `RSS`) têm esse caminho implementado.
 - **Etiqueta de rastreio no painel de leitura** ("Processado por: X | Prompt: vY") — o dado já é gravado em `llm_processing_log`, mas ainda não aparece na UI pública.
-- **Backfill de embeddings automático** — hoje é um script manual (`python -m embeddings.backfill`, ver seção "Mantendo os embeddings atualizados"); a ideia é integrá-lo ao final de `run_pipeline()` para todo artigo recém-processado já sair com embedding, sem esse passo manual.
+- **Backfill de embeddings automático** — hoje é um script manual (`python -m embeddings.backfill`, ver seção "Mantendo os embeddings atualizados"); a ideia é integrá-lo ao final de `run_pipeline()` para todo artigo recém-processado já sair com embedding, sem esse passo manual. Ver também "Ideia futura: botão de backfill de embeddings no `/admin`" abaixo, para um passo intermediário mais simples.
 - **Link "buscar" no feed RSS/leitores externos** — a busca semântica hoje só é acessível pelo painel (`/search`), não tem exposição nenhuma para quem consome só o `/feed.xml`.
 
 ### Ideia futura: auto-detecção de rota RSSHub ao cadastrar fonte
@@ -252,6 +252,17 @@ Como o código já é bind-mount (não uma cópia estática da imagem), o `uvico
 - Mudanças em `requirements.txt` (dependência nova) continuam exigindo `docker compose up -d --build` — pacotes instalados ficam "assados" na imagem, o `--reload` não cobre isso.
 - É um watcher de arquivos rodando o tempo todo — custo de CPU/RAM desprezível pro uso pessoal/dev, mas foge um pouco do princípio de "leveza" do `negocio.md` pensado pra produção numa Raspberry Pi. Não é recomendado deixar `--reload` ativo num ambiente de produção "real" — só faz sentido enquanto o projeto está em desenvolvimento ativo.
 - Não precisa mexer em nada no CasaOS pra isso — o botão de restart/recreate dele já roda `docker compose` por baixo dos panos; resolvendo o `--reload`, o CasaOS nem entra na equação pra esse tipo de ajuste.
+
+### Ideia futura: botão de backfill de embeddings no `/admin`
+
+Hoje o indicador "Cobertura de embeddings" do `/admin` (ver seção "Painel de administração") é só leitura — ele reflete o que já está no banco, mas não há nenhum gatilho na interface pra gerar os embeddings pendentes. A única forma é rodar `python -m embeddings.backfill` manualmente dentro do container (ver "Mantendo os embeddings atualizados" acima).
+
+**Ideia:** um botão "Gerar embeddings pendentes" ao lado do "▶ Executar varredura", chamando um novo endpoint (ex.: `POST /embeddings/backfill`) que dispara `run_embedding_backfill()` (`app/embeddings/backfill.py`) como background task — mesmo padrão assíncrono já usado por `/trigger-pipeline`.
+
+**Pontos a decidir na implementação:**
+
+- **Trava de concorrência:** reaproveitar `app/pipeline_state.py` (backfill e pipeline nunca rodam ao mesmo tempo) ou criar uma trava própria — backfill consome a IA de embedding, pipeline consome a IA de resumo, então talvez pudessem rodar em paralelo sem risco real de sobrecarga, diferente do que motivou a trava original.
+- **Atualização do indicador:** o card de cobertura é renderizado no servidor a cada load do `/admin`, sem polling (diferente do modal de logs). Disparar o backfill pelo botão exigiria recarregar a página pra ver o número novo, ou adicionar um `fetch` de refresh depois que o backfill terminar.
 
 ## Observação importante
 

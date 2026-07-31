@@ -106,6 +106,38 @@
       </div>
     </header>
 
+    <section aria-label="Indicadores do sistema" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
+      <div class="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+        <p class="text-xs uppercase tracking-wide text-neutral-500 mb-1">Artigos totais</p>
+        <p class="text-2xl font-semibold text-white">{{ stats.total_articles }}</p>
+      </div>
+      <div class="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+        <p class="text-xs uppercase tracking-wide text-neutral-500 mb-1">Pendentes</p>
+        <p class="text-2xl font-semibold text-white">{{ stats.pending }}</p>
+      </div>
+      <div class="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+        <p class="text-xs uppercase tracking-wide text-neutral-500 mb-1">Processados</p>
+        <p class="text-2xl font-semibold text-white">{{ stats.processed }}</p>
+      </div>
+      <div class="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+        <p class="text-xs uppercase tracking-wide text-neutral-500 mb-1">Mortos (DEAD)</p>
+        <p class="text-2xl font-semibold {{ 'text-amber-400' if stats.dead > 0 else 'text-white' }}">{{ stats.dead }}</p>
+      </div>
+      <div class="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+        <p class="text-xs uppercase tracking-wide text-neutral-500 mb-1">Cobertura de embeddings</p>
+        <p class="text-2xl font-semibold text-white">{{ stats.embedding_coverage_pct ~ '%' if stats.embedding_coverage_pct is not none else '—' }}</p>
+        <p class="text-xs text-neutral-500 mt-1">{{ stats.embedded }} de {{ stats.processed }} processados</p>
+      </div>
+      <div class="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+        <p class="text-xs uppercase tracking-wide text-neutral-500 mb-1">Fontes ativas</p>
+        <p class="text-2xl font-semibold text-white">{{ stats.sources_active }}/{{ stats.sources_total }}</p>
+      </div>
+      <div class="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+        <p class="text-xs uppercase tracking-wide text-neutral-500 mb-1">Tamanho do banco</p>
+        <p class="text-2xl font-semibold text-white">{{ '%.1f'|format(stats.db_size_mb) ~ ' MB' if stats.db_size_mb is not none else '—' }}</p>
+      </div>
+    </section>
+
     <section class="bg-neutral-900 border border-neutral-800 rounded-lg p-5 mb-8">
       <h2 class="text-sm font-medium text-neutral-300 mb-3">Adicionar fonte</h2>
       <form id="add-source-form" class="flex flex-col sm:flex-row gap-3">

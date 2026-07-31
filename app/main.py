@@ -2,6 +2,7 @@
 
 import collections
 import logging
+import os
 import re
 import traceback
 from contextlib import asynccontextmanager
@@ -15,14 +16,22 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlmodel import Field, Session, SQLModel, select
 
 import pipeline_state
 import scheduler as scheduler_service
 from database import create_db_and_tables, engine
 from llm_processor import run_llm_processing
-from models import Article, ArticleStatus, LLMProcessingLog, ScheduleConfig, Source, SourceType
+from models import (
+    Article,
+    ArticleEmbedding,
+    ArticleStatus,
+    LLMProcessingLog,
+    ScheduleConfig,
+    Source,
+    SourceType,
+)
 from pipeline import run_pipeline
 from search.router import router as search_router
 from timezone_utils import DISPLAY_TIMEZONE
@@ -400,27 +409,62 @@ def homepage(request: Request) -> Response:
     )
 
 
+def _compute_admin_stats(session: Session, sources: list[Source]) -> dict[str, Any]:
+    """Indicadores básicos de saúde do sistema exibidos no topo do /admin —
+    substitui a necessidade de abrir um cliente SQL externo (ex.: Datasette)
+    só para acompanhar o crescimento das tabelas."""
+    status_counts = dict(
+        session.exec(select(Article.status, func.count()).group_by(Article.status)).all()
+    )
+    processed = status_counts.get(ArticleStatus.PROCESSED, 0)
+    embedded = session.exec(select(func.count()).select_from(ArticleEmbedding)).one()
+
+    # engine.url.database já resolve o caminho configurado via DATABASE_URL
+    # (default "./data/occam.db") — evita hardcodar o path aqui.
+    db_size_mb: float | None = None
+    db_path = engine.url.database
+    if db_path and os.path.exists(db_path):
+        db_size_mb = os.path.getsize(db_path) / (1024 * 1024)
+
+    return {
+        "total_articles": sum(status_counts.values()),
+        "pending": status_counts.get(ArticleStatus.PENDING, 0),
+        "processed": processed,
+        "dead": status_counts.get(ArticleStatus.DEAD, 0),
+        "embedded": embedded,
+        "embedding_coverage_pct": round(embedded / processed * 100) if processed else None,
+        "sources_active": sum(1 for s in sources if s.active),
+        "sources_total": len(sources),
+        "db_size_mb": db_size_mb,
+    }
+
+
 @app.get(
     "/admin",
     response_class=HTMLResponse,
     tags=["Admin"],
     summary="Painel de administração de fontes",
     description=(
-        "Renderiza o painel HTML de administração: lista todas as fontes RSS cadastradas "
-        "(ativas e inativas) com seus respectivos limites diários, e oferece na própria "
-        "página os controles para cadastrar, ativar/desativar, excluir e ajustar o limite "
-        "de cada fonte — que por baixo chamam os endpoints em `/api/sources`. Também "
-        "oferece um botão para disparar o pipeline (`POST /trigger-pipeline`) e um modal "
-        "para acompanhar os logs em tempo real (`GET /api/logs`)."
+        "Renderiza o painel HTML de administração: indicadores básicos de saúde do banco "
+        "(contagem de artigos por status, cobertura de embeddings, fontes ativas e tamanho "
+        "do arquivo SQLite), a lista de todas as fontes RSS cadastradas (ativas e inativas) "
+        "com seus respectivos limites diários, e oferece na própria página os controles "
+        "para cadastrar, ativar/desativar, excluir e ajustar o limite de cada fonte — que "
+        "por baixo chamam os endpoints em `/api/sources`. Também oferece um botão para "
+        "disparar o pipeline (`POST /trigger-pipeline`) e um modal para acompanhar os logs "
+        "em tempo real (`GET /api/logs`)."
     ),
     response_description="Página HTML do painel de administração.",
 )
 def admin_page(request: Request) -> Response:
     with Session(engine) as session:
         sources = session.exec(select(Source).order_by(Source.id)).all()
+        stats = _compute_admin_stats(session, sources)
     schedule = scheduler_service.load_schedule_from_db()
     return templates.TemplateResponse(
-        request=request, name="admin.html", context={"sources": sources, "schedule": schedule}
+        request=request,
+        name="admin.html",
+        context={"sources": sources, "schedule": schedule, "stats": stats},
     )
 
 
