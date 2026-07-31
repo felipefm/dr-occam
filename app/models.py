@@ -94,6 +94,24 @@ class ScheduleConfig(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
+class ArticleEmbedding(SQLModel, table=True):
+    """Proveniência do embedding de um artigo (qual modelo/dimensão gerou o
+    vetor e quando). O vetor em si NÃO fica aqui: fica na tabela virtual
+    `vec_articles` (extensão sqlite-vec), que o SQLModel não sabe mapear —
+    ver embeddings/repository.py. Esta tabela é o índice relacional que diz
+    quais artigos já têm vetor gerado."""
+
+    __tablename__ = "article_embedding"
+
+    id: int | None = Field(default=None, primary_key=True)
+    article_id: int = Field(
+        foreign_key="article.id", nullable=False, unique=True, index=True
+    )
+    model: str = Field(nullable=False, max_length=100)
+    dimensions: int = Field(nullable=False)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
 class LLMProcessingLog(SQLModel, table=True):
     __tablename__ = "llm_processing_log"
 

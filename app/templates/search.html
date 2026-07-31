@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dr. Occam · Busca</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html, body { overflow-x: hidden; }
+    .relevance-fill { transition: width .5s ease; }
+  </style>
+</head>
+<body class="bg-neutral-950 text-neutral-200 min-h-screen">
+  <div class="max-w-3xl mx-auto px-4 py-6 sm:py-10">
+    <header class="mb-8">
+      <a
+        href="/"
+        class="inline-flex items-center gap-1.5 -ml-2 mb-3 px-2 py-1 rounded-md text-sm text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/60 transition-colors"
+      ><span aria-hidden="true">←</span> Voltar para o feed</a>
+      <h1 class="text-xl font-semibold text-white">Dr. Occam · Busca</h1>
+      <p class="text-sm text-neutral-500 mt-1">
+        Busque por assunto em linguagem natural — ex.: "terremoto na china" ou
+        "o que saiu sobre o Telegram nos últimos 30 dias".
+      </p>
+    </header>
+
+    <form id="search-form" class="flex flex-col sm:flex-row gap-3 mb-2">
+      <label for="search-input" class="sr-only">Buscar notícias</label>
+      <input
+        id="search-input" name="q" type="search" required minlength="1" maxlength="500"
+        autocomplete="off" autofocus
+        placeholder="O que você quer saber?"
+        class="flex-1 rounded-md bg-neutral-800 border border-neutral-700 px-4 py-3 text-base text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      >
+      <button
+        id="search-submit-btn" type="submit"
+        class="shrink-0 rounded-md bg-indigo-600 hover:bg-indigo-500 px-6 py-3 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >🔎 Buscar</button>
+    </form>
+
+    <p id="search-status" class="text-sm text-neutral-500 mb-4 hidden" role="status"></p>
+
+    <div id="search-suggestions" class="flex flex-wrap gap-2 mb-6 hidden"></div>
+
+    <div id="search-results" class="flex flex-col gap-4"></div>
+  </div>
+
+  <template id="result-card-template">
+    <article class="bg-neutral-900 border border-neutral-800 rounded-lg p-5">
+      <div class="flex items-start justify-between gap-4 mb-1.5">
+        <h2 class="text-base font-medium text-white leading-snug">
+          <a data-field="title-link" target="_blank" rel="noopener noreferrer" class="hover:underline"></a>
+        </h2>
+        <span data-field="relevance-label" class="shrink-0 mt-0.5 text-xs font-semibold text-neutral-300 tabular-nums"></span>
+      </div>
+      <p data-field="summary" class="text-sm text-neutral-400 whitespace-pre-line mb-3"></p>
+      <div
+        class="w-full h-2 rounded-full bg-neutral-800 overflow-hidden"
+        role="progressbar" aria-valuemin="0" aria-valuemax="100" data-field="relevance-track"
+      >
+        <div data-field="relevance-bar" class="relevance-fill h-full rounded-full" style="width: 0%"></div>
+      </div>
+      <time data-field="published-at" class="block mt-2 text-xs text-neutral-500"></time>
+    </article>
+  </template>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var form = document.getElementById("search-form");
+      var input = document.getElementById("search-input");
+      var submitBtn = document.getElementById("search-submit-btn");
+      var statusEl = document.getElementById("search-status");
+      var suggestionsEl = document.getElementById("search-suggestions");
+      var resultsEl = document.getElementById("search-results");
+      var cardTemplate = document.getElementById("result-card-template");
+
+      var TOP_K = 15;
+      // Faixas da barra de relevância: 0–40% vermelho, 41–70% amarelo/laranja,
+      // 71–100% verde (ver diretriz de UX da tela de busca).
+      var RELEVANCE_LOW_MAX = 40;
+      var RELEVANCE_MEDIUM_MAX = 70;
+
+      function relevanceColorClass(percentage) {
+        if (percentage <= RELEVANCE_LOW_MAX) return "bg-red-500";
+        if (percentage <= RELEVANCE_MEDIUM_MAX) return "bg-amber-500";
+        return "bg-emerald-500";
+      }
+
+      // Datas "AAAA-MM-DD" puras (sem hora) — reformata por string, sem
+      // passar por Date/fuso, para não sofrer o clássico bug de "um dia a
+      // menos" que ocorre ao interpretar uma data pura como UTC meia-noite
+      // e depois converter para um fuso negativo (ex.: America/Sao_Paulo).
+      function formatIsoDate(isoDate) {
+        var parts = (isoDate || "").split("-");
+        if (parts.length !== 3) return "";
+        return parts[2] + "/" + parts[1] + "/" + parts[0];
+      }
+
+      // published_at vem com hora + fuso (ex. "...+00:00") — aqui sim cabe
+      // conversão de fuso normal, exibida sempre em America/Sao_Paulo
+      // (mesmo fuso de exibição do resto do site), independente do fuso do
+      // navegador de quem estiver acessando.
+      function formatPublishedAt(isoDateTime) {
+        var parsed = new Date(isoDateTime);
+        if (isNaN(parsed.getTime())) return "";
+        return parsed.toLocaleString("pt-BR", {
+          timeZone: "America/Sao_Paulo",
+          day: "2-digit", month: "2-digit", year: "numeric",
+          hour: "2-digit", minute: "2-digit",
+        });
+      }
+
+      function buildResultCard(result) {
+        var node = cardTemplate.content.cloneNode(true);
+
+        var titleLink = node.querySelector('[data-field="title-link"]');
+        titleLink.textContent = result.title;
+        titleLink.href = result.url;
+
+        node.querySelector('[data-field="summary"]').textContent = result.summary;
+
+        var percentage = Math.max(0, Math.min(100, result.relevance_percentage));
+        var bar = node.querySelector('[data-field="relevance-bar"]');
+        bar.style.width = percentage + "%";
+        bar.classList.add(relevanceColorClass(percentage));
+        node.querySelector('[data-field="relevance-track"]').setAttribute(
+          "aria-valuenow", String(percentage)
+        );
+        node.querySelector('[data-field="relevance-label"]').textContent =
+          percentage.toFixed(0) + "% relevante";
+
+        node.querySelector('[data-field="published-at"]').textContent =
+          formatPublishedAt(result.published_at);
+
+        return node;
+      }
+
+      function setStatus(message, isError) {
+        if (!message) {
+          statusEl.classList.add("hidden");
+          statusEl.textContent = "";
+          return;
+        }
+        statusEl.classList.remove("hidden");
+        statusEl.textContent = message;
+        statusEl.classList.toggle("text-red-400", !!isError);
+        statusEl.classList.toggle("text-neutral-500", !isError);
+      }
+
+      function describeDateFilter(data) {
+        if (!data.interpreted_start_date && !data.interpreted_end_date) return "";
+        var start = data.interpreted_start_date ? formatIsoDate(data.interpreted_start_date) : "sempre";
+        var end = data.interpreted_end_date ? formatIsoDate(data.interpreted_end_date) : "hoje";
+        return "Filtro de data identificado: " + start + " até " + end + ". ";
+      }
+
+      function renderSuggestions(suggestions) {
+        suggestionsEl.innerHTML = "";
+        if (!suggestions || !suggestions.length) {
+          suggestionsEl.classList.add("hidden");
+          return;
+        }
+
+        suggestionsEl.classList.remove("hidden");
+        suggestions.forEach(function (suggestion) {
+          var chip = document.createElement("button");
+          chip.type = "button";
+          chip.textContent = suggestion;
+          chip.className = "rounded-full border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 " +
+            "hover:border-indigo-500 px-3 py-1.5 text-xs text-neutral-300 transition-colors";
+          chip.addEventListener("click", function () {
+            input.value = suggestion;
+            runSearch(suggestion);
+          });
+          suggestionsEl.appendChild(chip);
+        });
+      }
+
+      function renderResults(data) {
+        resultsEl.innerHTML = "";
+        var dateNote = describeDateFilter(data);
+
+        if (!data.results.length) {
+          setStatus(
+            dateNote + "Nenhum resultado relevante encontrado. Tente uma busca mais específica" +
+            (data.suggestions && data.suggestions.length ? " — algumas sugestões abaixo:" : "."),
+            false
+          );
+          renderSuggestions(data.suggestions);
+          return;
+        }
+
+        setStatus(dateNote + data.results.length + " resultado(s) encontrado(s).", false);
+        renderSuggestions(null);
+        data.results.forEach(function (result) {
+          resultsEl.appendChild(buildResultCard(result));
+        });
+      }
+
+      function setLoading(isLoading) {
+        submitBtn.disabled = isLoading;
+        input.disabled = isLoading;
+      }
+
+      async function runSearch(query) {
+        setLoading(true);
+        setStatus("Buscando...", false);
+        renderSuggestions(null);
+        resultsEl.innerHTML = "";
+
+        try {
+          var url = "/api/search?q=" + encodeURIComponent(query) + "&top_k=" + TOP_K;
+          var response = await fetch(url);
+          if (!response.ok) throw new Error("status " + response.status);
+          renderResults(await response.json());
+        } catch (err) {
+          setStatus("Não foi possível buscar agora. Tente novamente em instantes.", true);
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        var query = input.value.trim();
+        if (!query) return;
+        runSearch(query);
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -54,40 +54,17 @@ import json
 import logging
 import os
 import re
-from typing import Any
 
 import litellm
 from sqlmodel import Session, func, select
 
 from database import engine
+from llm_cascade import LLM_CASCADE
 from models import Article, ArticleStatus, LLMProcessingLog
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-
-def _load_llm_cascade() -> list[dict[str, Any]]:
-    """Lê LLM_MODEL_N / LLM_API_BASE_N / LLM_API_KEY_N em sequência a
-    partir de N=1 até a numeração parar de existir."""
-    entries: list[dict[str, Any]] = []
-    n = 1
-    while True:
-        model = os.getenv(f"LLM_MODEL_{n}")
-        if not model:
-            break
-        entry: dict[str, Any] = {"model": model}
-        api_base = os.getenv(f"LLM_API_BASE_{n}")
-        api_key = os.getenv(f"LLM_API_KEY_{n}")
-        if api_base:
-            entry["api_base"] = api_base
-        if api_key:
-            entry["api_key"] = api_key
-        entries.append(entry)
-        n += 1
-    return entries
-
-
-LLM_CASCADE: list[dict[str, Any]] = _load_llm_cascade()
 PROMPT_VERSION = "occam-neutral-v1"
 
 LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "15"))

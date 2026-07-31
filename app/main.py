@@ -10,7 +10,6 @@ from email.utils import format_datetime
 from typing import Any, AsyncIterator
 from urllib.parse import quote
 from xml.sax.saxutils import escape
-from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
@@ -19,11 +18,14 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import or_
 from sqlmodel import Field, Session, SQLModel, select
 
+import pipeline_state
 import scheduler as scheduler_service
 from database import create_db_and_tables, engine
 from llm_processor import run_llm_processing
 from models import Article, ArticleStatus, LLMProcessingLog, ScheduleConfig, Source, SourceType
 from pipeline import run_pipeline
+from search.router import router as search_router
+from timezone_utils import DISPLAY_TIMEZONE
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -50,7 +52,6 @@ TRUNCATION_WARNING = (
 )
 FEED_LIMIT = 100
 HOMEPAGE_LIMIT = 50
-DISPLAY_TIMEZONE = ZoneInfo("America/Sao_Paulo")
 
 
 @asynccontextmanager
@@ -69,6 +70,11 @@ TAGS_METADATA = [
     {
         "name": "Feed",
         "description": "Conteúdo público consumido por leitores humanos (feed RSS e página inicial).",
+    },
+    {
+        "name": "Busca",
+        "description": "Busca híbrida (semântica + filtro de data em linguagem natural) sobre "
+        "os artigos já processados.",
     },
     {
         "name": "Admin",
@@ -105,6 +111,7 @@ app = FastAPI(
     openapi_tags=TAGS_METADATA,
 )
 templates = Jinja2Templates(directory="templates")
+app.include_router(search_router)
 
 
 class SourceCreatePayload(SQLModel):
@@ -217,11 +224,22 @@ def _telegram_share_url(title: str, summary: str, url: str) -> str:
     response_description="Confirmação de que o pipeline foi agendado para execução em background.",
 )
 async def trigger_pipeline(background_tasks: BackgroundTasks) -> dict[str, str]:
+    if pipeline_state.is_running():
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe uma varredura em andamento — aguarde ela terminar antes de disparar outra.",
+        )
     background_tasks.add_task(run_pipeline)
     return {"message": "Pipeline iniciado"}
 
 
 async def _run_llm_reprocessing() -> None:
+    if not pipeline_state.try_acquire():
+        logger.warning(
+            "Reprocessamento de DEAD: já existe uma execução em andamento — disparo ignorado"
+        )
+        return
+
     logger.info("Reprocessamento de DEAD: gatilho recebido, iniciando em background")
     try:
         llm_summary = await run_llm_processing()
@@ -229,6 +247,8 @@ async def _run_llm_reprocessing() -> None:
     except Exception as e:
         logger.error("Reprocessamento de DEAD: falha durante a execução: %s", e)
         traceback.print_exc()
+    finally:
+        pipeline_state.release()
 
 
 @app.post(
@@ -255,6 +275,12 @@ def reprocess_dead_articles(
         description="Máximo de artigos DEAD a ressuscitar nesta chamada.",
     ),
 ) -> dict[str, Any]:
+    if pipeline_state.is_running():
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe uma execução em andamento — aguarde ela terminar antes de reprocessar.",
+        )
+
     with Session(engine) as session:
         dead_articles = session.exec(
             select(Article)
@@ -396,6 +422,24 @@ def admin_page(request: Request) -> Response:
     return templates.TemplateResponse(
         request=request, name="admin.html", context={"sources": sources, "schedule": schedule}
     )
+
+
+@app.get(
+    "/search",
+    response_class=HTMLResponse,
+    tags=["Busca"],
+    summary="Tela de busca híbrida",
+    description=(
+        "Renderiza a tela de busca: um campo de busca em linguagem natural que "
+        "consome `GET /api/search` via JavaScript e exibe os resultados em cards, "
+        "cada um com título, resumo e uma barra visual de relevância (vermelha "
+        "até 40%, amarela até 70%, verde acima disso). Nenhum dado é carregado "
+        "no load da página — a busca só roda quando o usuário envia o formulário."
+    ),
+    response_description="Página HTML da tela de busca.",
+)
+def search_page(request: Request) -> Response:
+    return templates.TemplateResponse(request=request, name="search.html", context={})
 
 
 @app.get(

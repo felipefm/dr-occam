@@ -8,6 +8,8 @@ from typing import Annotated
 from fastapi import Depends
 from sqlmodel import Session, SQLModel, create_engine
 
+from embeddings.repository import attach_vec_extension, ensure_vec_table
+
 logger = logging.getLogger(__name__)
 
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./data/occam.db")
@@ -17,6 +19,12 @@ _connect_args: dict[str, bool] = (
 )
 
 engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
+
+# Precisa rodar logo após criar o engine e antes de qualquer conexão real
+# ser aberta (inclusive as da migração abaixo): o listener só é aplicado a
+# conexões físicas novas do pool, então registrar depois de uma conexão já
+# ter sido usada deixaria essa conexão sem a extensão carregada.
+attach_vec_extension(engine)
 
 
 def _migrate_article_source_id_nullable() -> None:
@@ -68,6 +76,7 @@ def _migrate_article_source_id_nullable() -> None:
 def create_db_and_tables() -> None:
     _migrate_article_source_id_nullable()
     SQLModel.metadata.create_all(engine)
+    ensure_vec_table(engine)
 
 
 def get_session() -> Generator[Session, None, None]:

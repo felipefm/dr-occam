@@ -46,11 +46,91 @@ Cada job usa `max_instances=1` e `coalesce=True` — nunca duas execuções do m
 
 **Pressuposto importante:** assume um único processo/worker `uvicorn` (é como o `Dockerfile` já sobe a aplicação hoje). Com múltiplos workers, cada um teria seu próprio agendador em memória e o pipeline disparia em duplicidade — se isso mudar no futuro, o agendamento precisa migrar pra um processo dedicado.
 
+### Proteção contra execução concorrente e limites de recursos
+
+`app/pipeline_state.py` guarda um flag simples em memória de processo (mesma premissa de único worker `uvicorn` do agendador acima): `run_pipeline()` e o reprocessamento de `DEAD` (`_run_llm_reprocessing`) só rodam se não houver outra execução em andamento — clicar de novo em "Executar varredura" (ou disparar `POST /pipeline/reprocess-dead`) enquanto uma varredura já está rodando responde `409` com uma mensagem clara, em vez de empilhar execuções concorrentes independentes.
+
+Essa trava existe porque, sem ela, cliques repetidos (ou uma varredura agendada coincidindo com um disparo manual) somavam várias execuções simultâneas — cada uma com seu próprio conjunto de downloads de feed e chamadas de IA concorrentes. Isso já chegou a esgotar toda a memória do host: sem limite de container e sem swap configurado, o OOM killer do Linux reagiu derrubando processos do sistema inteiro, inclusive containers sem relação nenhuma com o Dr. Occam.
+
+Como camada complementar, o `docker-compose.yml` define um teto de memória/CPU por serviço (`mem_limit`/`cpus` — não `deploy.resources.limits`, que só é respeitado em modo swarm, e este projeto roda com `docker compose up` normal): `api-occam` a 2GB/2 CPUs, `rsshub` a 512MB/1 CPU. Assim, mesmo que algo escape do controle dentro de um container, o pior caso passa a ser aquele container sendo reiniciado — não o host inteiro travando.
+
 ### Cascata de IAs (fallback)
 
 `llm_processor.py` lê modelos numerados do ambiente (`LLM_MODEL_1`, `LLM_MODEL_2`, ...) e monta a cascata nativa de `fallbacks` do `litellm`: a chamada usa o modelo `1` como primário; se ele falhar (conexão recusada, timeout, rate limit etc.), o `litellm` tenta o `2`, depois o `3`, e assim por diante — de forma automática e silenciosa, sem que isso conte como falha de processamento do artigo (só falha de verdade se **todos** os modelos da cascata falharem). Cada modelo pode ter seu próprio `LLM_API_BASE_N`/`LLM_API_KEY_N`, o que permite misturar um LLM local (ex.: LM Studio numa outra máquina da rede, nem sempre ligada) com APIs comerciais na nuvem como fallback. `LLM_TIMEOUT_SECONDS` garante que uma máquina local desligada não trave a cascata por muito tempo antes de cair para o próximo modelo.
 
 O ciclo completo (ingestão → processamento por IA) é disparado sob demanda via `POST /trigger-pipeline` (roda em background e responde imediatamente) ou automaticamente pelo agendador interno descrito acima.
+
+### Busca semântica (`/search`)
+
+Busca híbrida em linguagem natural (ex.: *"o que saiu sobre o Telegram nos últimos 30 dias"*), servida numa tela dedicada (`/search`, Tailwind via CDN, mesmo estilo do `/admin`) que consome `GET /api/search`. Combina duas etapas de IA com um índice vetorial local — nenhum serviço externo de busca/embeddings:
+
+1. **Extração de filtro de data** (`app/search/intent_service.py`): uma chamada de chat (reaproveita a mesma cascata `LLM_CASCADE` do `llm_processor.py`, sem cascata própria) lê a busca e, se houver uma expressão temporal ("últimos 30 dias", "semana passada", "mês passado", "ontem" etc.), calcula `start_date`/`end_date` absolutos e devolve a busca sem a parte temporal (`cleaned_query`, usada na etapa seguinte). Falha (timeout, JSON malformado, cascata inteira fora do ar) degrada graciosamente para "sem filtro de data" — a busca semântica pura ainda funciona mesmo se essa etapa quebrar.
+2. **Similaridade vetorial** (`app/search/repository.py` + `app/embeddings/`): `cleaned_query` é convertido em embedding e comparado por **distância de cosseno** com os embeddings dos artigos `PROCESSED` dentro da janela de data (se houver), usando a extensão [`sqlite-vec`](https://github.com/asg017/sqlite-vec) (tabela virtual `vec_articles`, `distance_metric=cosine`) — sem depender de um banco vetorial à parte (ChromaDB, pgvector etc.). A distância vira um percentual de relevância (0-100%) exibido como barra colorida (vermelho ≤40%, amarelo 41-70%, verde 71-100%).
+3. **Piso de relevância** (`SEARCH_MIN_RELEVANCE_PERCENTAGE`, ver variáveis de ambiente abaixo): resultados abaixo do piso são descartados da resposta — sem isso, buscas vagas de uma palavra só (ex.: "atropelamento" sozinho) produzem similaridade de cosseno artificialmente parecida entre artigos sem relação nenhuma.
+4. **Sugestões de refinamento** (`app/search/suggestion_service.py`): quando nenhum resultado passa do piso, uma chamada de IA separada sugere buscas mais específicas, com base nos títulos que até apareceram na busca (mesmo com relevância baixa) — pistas reais do acervo, não exemplos genéricos inventados. O prompt proíbe explicitamente perguntas/meta-comentário ("Você poderia especificar...") e há um filtro defensivo no parsing (`_looks_like_query`) que descarta qualquer sugestão nesse formato antes de devolver — necessário porque modelos locais menores às vezes ignoram a instrução do prompt, e o front-end usa a sugestão como texto literal da próxima busca (clicar num chip dispara `runSearch` de novo).
+
+O vetor de cada artigo é gerado por `app/embeddings/service.py` (título + resumo da IA, truncado em `MAX_EMBEDDING_INPUT_CHARS`) via `litellm.aembedding` — mesmo padrão de cascata "provedor plugável" do resto do projeto (local via LM Studio, comercial via OpenAI etc.), guardado junto com metadados de proveniência na tabela `article_embedding` (modelo, dimensões, data). **Importante para modelos da família `nomic-embed-text`**: eles exigem prefixos de tarefa diferentes para texto indexado vs. texto de busca (`EMBEDDING_DOCUMENT_PREFIX`/`EMBEDDING_QUERY_PREFIX`) — sem isso o modelo não dá erro nenhum, só produz vetores mal discriminados (tudo parece ~60% relevante, relevante ou não).
+
+#### Mantendo os embeddings atualizados
+
+A geração de embeddings **ainda não é automática** — não está integrada ao `run_pipeline()` (é uma etapa manual, deliberadamente separada até o design da busca estar validado; ver Roadmap). Isso significa que todo artigo novo que o pipeline processa (`PENDING` → `PROCESSED`) fica **sem embedding e de fora da busca** até o script de backfill rodar. O script é idempotente — só processa artigos `PROCESSED` que ainda não têm embedding salvo (`get_article_ids_missing_embedding`), então rodá-lo de novo depois de cada varredura é seguro e rápido (não reprocessa o que já tem vetor).
+
+Rodar o backfill **em primeiro plano** (bloqueia o terminal até terminar — bom para acompanhar o progresso em tempo real, ex. logo depois de zerar a base ou popular muitos artigos de uma vez):
+
+```bash
+docker exec -it dr_occam_api python -m embeddings.backfill
+```
+
+Rodar **em segundo plano** (recomendado para lotes grandes ou modelos locais lentos — não trava o terminal, e sobrevive a você fechar a sessão SSH):
+
+```bash
+docker exec -d dr_occam_api sh -c "python -m embeddings.backfill > /app/data/backfill.log 2>&1"
+```
+
+Acompanhar o progresso de uma execução em segundo plano (`Ctrl+C` só sai do `tail`, não interrompe o backfill):
+
+```bash
+docker exec -it dr_occam_api tail -f /app/data/backfill.log
+```
+
+Conferir quantos artigos ainda faltam (fora do container, direto no arquivo SQLite montado em `./app/data/occam.db`):
+
+```bash
+python3 -c "
+import sqlite3
+con = sqlite3.connect('app/data/occam.db')
+cur = con.cursor()
+cur.execute('''
+    SELECT COUNT(*) FROM article a
+    LEFT JOIN article_embedding e ON e.article_id = a.id
+    WHERE a.status = 'PROCESSED' AND e.id IS NULL
+''')
+print('artigos PROCESSED sem embedding:', cur.fetchone()[0])
+"
+```
+
+Se quiser reindexar tudo do zero (ex.: trocou de modelo de embedding, ou de dimensão) é preciso **derrubar a tabela vetorial e apagar os metadados** antes de rodar o backfill de novo — sem isso, artigos que já têm uma linha em `article_embedding` seriam pulados mesmo com o vetor antigo (de outro modelo/dimensão) parado na `vec_articles`:
+
+```bash
+docker exec -it dr_occam_api python -c "
+from sqlmodel import Session, delete
+from database import engine
+from models import ArticleEmbedding
+
+with engine.connect() as conn:
+    conn.exec_driver_sql('DROP TABLE IF EXISTS vec_articles')
+    conn.commit()
+
+with Session(engine) as session:
+    session.exec(delete(ArticleEmbedding))
+    session.commit()
+
+print('vec_articles derrubada e article_embedding zerada — rode o backfill de novo')
+"
+docker exec -it dr_occam_api python -m embeddings.backfill
+```
+
+Nenhum desses comandos exige rebuild de imagem — só `docker exec` num container que já está rodando.
 
 ## Modelo de dados
 
@@ -58,16 +138,19 @@ O ciclo completo (ingestão → processamento por IA) é disparado sob demanda v
 - **`article`**: cada notícia coletada — conteúdo original, status (`PENDING`/`PROCESSED`/`DEAD`/`DEDUPLICATED`), título e resumo gerados pela IA, `cluster_id`, contagem de tentativas e flag de truncamento. O enum de status também tem um valor `ARCHIVED`, mas é legado: era usado por um soft delete automático por cota diária que foi removido (arquivava artigos `PENDING` antes do LLM processá-los); nenhum código atual produz esse status, ele só existe pra não quebrar a leitura de linhas antigas já gravadas com ele.
 - **`llm_processing_log`**: rastreabilidade de cada chamada de IA feita sobre um artigo (provider, versão do prompt, tokens consumidos, status).
 - **`schedule_config`**: configuração persistida do agendador automático (linha única) — `enabled` e a lista `times` (horários `HH:MM`, formato `JSON`).
+- **`article_embedding`**: proveniência do embedding de cada artigo (modelo, dimensões, data de geração) — o vetor em si não fica nessa tabela, mora na tabela virtual `vec_articles` da extensão `sqlite-vec` (o SQLModel/SQLAlchemy não mapeia esse tipo de tabela). Ver Busca semântica.
 
 ## Endpoints
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `POST` | `/trigger-pipeline` | Dispara ingestão + processamento por IA como background task. Responde `202` imediatamente. |
-| `POST` | `/pipeline/reprocess-dead` | Busca até `limit` artigos `DEAD` (padrão 20, máx. 200), volta o status para `PENDING` e zera `retry_count`, disparando o reprocessamento por IA como background task. Responde `202` com `{"articles_resurrected": N}`. |
+| `POST` | `/trigger-pipeline` | Dispara ingestão + processamento por IA como background task. Responde `202` imediatamente, ou `409` se já houver uma execução em andamento (ver Proteção contra execução concorrente). |
+| `POST` | `/pipeline/reprocess-dead` | Busca até `limit` artigos `DEAD` (padrão 20, máx. 200), volta o status para `PENDING` e zera `retry_count`, disparando o reprocessamento por IA como background task. Responde `202` com `{"articles_resurrected": N}`, ou `409` se já houver uma execução em andamento. |
 | `GET` | `/feed.xml` | Feed RSS 2.0 dos artigos `PROCESSED`, mais recentes primeiro. |
 | `GET` | `/` | Painel HTML mínimo para leitura rápida dos últimos artigos processados. |
 | `GET` | `/admin` | Painel de administração (Jinja2 + Tailwind via CDN) para gerenciar as fontes. |
+| `GET` | `/search` | Tela de busca semântica (Jinja2 + Tailwind via CDN), consome `/api/search`. |
+| `GET` | `/api/search` | Busca híbrida: `q` (busca em linguagem natural, obrigatório) e `top_k` (máx. resultados, padrão 10, máx. 50). Retorna o filtro de data interpretado, os resultados com percentual de relevância e, se nenhum resultado passar do piso de relevância, sugestões de busca mais específicas. |
 | `POST` | `/api/sources` | Cria uma fonte `RSS` nova (`{"name": ..., "url": ...}`). |
 | `PATCH` | `/api/sources/{id}/toggle` | Alterna `active` da fonte. |
 | `PUT` | `/api/sources/{id}/limit` | Atualiza `max_daily_articles` (`{"max_daily_articles": N}`). |
@@ -90,6 +173,16 @@ O ciclo completo (ingestão → processamento por IA) é disparado sob demanda v
 | `LLM_MODEL_N` / `LLM_API_BASE_N` / `LLM_API_KEY_N` | Padrão repetível para adicionar mais modelos à cascata (N = 3, 4, ...), sem alterar código. |
 | `MAX_CONTENT_LENGTH` | Tamanho máximo (caracteres) do texto enviado à IA antes de truncar. |
 | `NEGATIVE_KEYWORDS` | Palavras-chave (separadas por vírgula) que descartam uma notícia antes da extração. |
+| `EMBEDDING_MODEL` | Modelo de embedding no formato `litellm` (default `text-embedding-3-small`). |
+| `EMBEDDING_API_KEY` | Chave do provedor de embeddings. Se ausente, cai para `OPENAI_API_KEY`. |
+| `EMBEDDING_API_BASE` | Base URL customizada (ex.: LM Studio local). Opcional. |
+| `EMBEDDING_DIMENSIONS` | Dimensão do vetor — define o tamanho fixo da coluna da tabela `vec_articles` (mudar depois de criada exige recriar a tabela, ver seção "Mantendo os embeddings atualizados"). |
+| `EMBEDDING_BATCH_SIZE` | Artigos por lote no backfill (default 50). |
+| `EMBEDDING_MAX_CONCURRENCY` | Chamadas concorrentes ao provedor de embeddings (default 5). |
+| `EMBEDDING_TIMEOUT_SECONDS` | Timeout por chamada de embedding, em segundos (default 60). |
+| `EMBEDDING_DOCUMENT_PREFIX` / `EMBEDDING_QUERY_PREFIX` | Prefixo de tarefa prependido ao texto antes de embedar (default vazio) — obrigatório para modelos `nomic-embed-text` (`"search_document: "` / `"search_query: "`); deixe vazio para provedores como OpenAI. |
+| `INTENT_LLM_TIMEOUT_SECONDS` | Timeout das chamadas de chat auxiliares da busca (extração de data, sugestões de refinamento) — default 10s, aumente se seu modelo local for lento. |
+| `SEARCH_MIN_RELEVANCE_PERCENTAGE` | Piso de relevância (0-100) abaixo do qual um resultado é descartado da busca (default 65). |
 
 ## Como rodar
 
@@ -110,7 +203,7 @@ curl -X POST http://localhost:8383/trigger-pipeline
 
 ## Estado atual vs. visão do produto
 
-Já implementado: ingestão RSS, filtro anti-ruído, limite de artigos coletados por execução por fonte, extração de conteúdo in-process via trafilatura (sequencial, sem microsserviço externo), cascata de IAs com fallback automático (local + nuvem), resumo neutro via IA com log de rastreabilidade, retry/DEAD com fila standby de repescagem de timeout, reprocessamento manual de artigos `DEAD` (`/pipeline/reprocess-dead`, com botão dedicado no `/admin`), feed RSS 2.0, painel de leitura HTML, painel de administração de fontes (`/admin`, CRUD completo, responsivo em mobile), agendador automático interno via `APScheduler` configurável pelo `/admin` (manual, diário ou múltiplas vezes ao dia, persistido em banco e reconfigurável sem restart), gatilho manual assíncrono, limpeza manual de dados antigos por idade (`DELETE /api/articles`, `DELETE /api/llm-logs`) para conter o crescimento do banco.
+Já implementado: ingestão RSS, filtro anti-ruído, limite de artigos coletados por execução por fonte, extração de conteúdo in-process via trafilatura (sequencial, sem microsserviço externo), cascata de IAs com fallback automático (local + nuvem), resumo neutro via IA com log de rastreabilidade, retry/DEAD com fila standby de repescagem de timeout, reprocessamento manual de artigos `DEAD` (`/pipeline/reprocess-dead`, com botão dedicado no `/admin`), feed RSS 2.0, painel de leitura HTML, painel de administração de fontes (`/admin`, CRUD completo, responsivo em mobile), agendador automático interno via `APScheduler` configurável pelo `/admin` (manual, diário ou múltiplas vezes ao dia, persistido em banco e reconfigurável sem restart), gatilho manual assíncrono, trava contra execução concorrente do pipeline (`app/pipeline_state.py`) e teto de memória/CPU por container no `docker-compose.yml`, limpeza manual de dados antigos por idade (`DELETE /api/articles`, `DELETE /api/llm-logs`) para conter o crescimento do banco, e busca semântica híbrida (`/search`, filtro de data em linguagem natural + similaridade de cosseno via `sqlite-vec` + piso de relevância + sugestões de refinamento, com backfill de embeddings manual — ver seção dedicada).
 
 Ainda não implementado (fazem parte da especificação de negócio original, em `negocio.md`):
 
@@ -119,10 +212,8 @@ Ainda não implementado (fazem parte da especificação de negócio original, em
 - **Tradução explícita** de fontes multi-idioma como etapa dedicada do pipeline.
 - **Fontes `HTML_SCRAPE`** — o schema já suporta o tipo, mas nem o `/admin` (o formulário só cria `RSS`) nem a ingestão (que só sabe extrair links de `RSS`) têm esse caminho implementado.
 - **Etiqueta de rastreio no painel de leitura** ("Processado por: X | Prompt: vY") — o dado já é gravado em `llm_processing_log`, mas ainda não aparece na UI pública.
-
-### Ideia futura: campo de busca inteligente
-
-Pedido do usuário, ainda não desenhado/implementado: um campo de busca no painel de leitura (`/`) que encontre artigos não só por correspondência exata de texto, mas também por **termos correlatos** (sinônimos, temas relacionados) — usando a mesma cascata de IA (`litellm`) já configurada em `app/llm_processor.py`, em vez de subir um serviço de busca/embeddings à parte. Precisa de desenho antes de implementar: onde cachear/indexar (evitar chamar a IA a cada tecla digitada), e se a resposta usa busca textual simples (SQLite `LIKE`/FTS5) como primeira camada, com a IA entrando só para expandir termos da consulta ou para casos sem resultado direto.
+- **Backfill de embeddings automático** — hoje é um script manual (`python -m embeddings.backfill`, ver seção "Mantendo os embeddings atualizados"); a ideia é integrá-lo ao final de `run_pipeline()` para todo artigo recém-processado já sair com embedding, sem esse passo manual.
+- **Link "buscar" no feed RSS/leitores externos** — a busca semântica hoje só é acessível pelo painel (`/search`), não tem exposição nenhuma para quem consome só o `/feed.xml`.
 
 ### Ideia futura: auto-detecção de rota RSSHub ao cadastrar fonte
 
