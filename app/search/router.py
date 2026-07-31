@@ -1,12 +1,12 @@
 """Rota HTTP da busca híbrida. Nenhuma lógica de negócio mora aqui — só
 validação de entrada (via FastAPI/Query) e delegação para search.service."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import Session
 
 from database import engine
 from search.schemas import SearchResponse
-from search.service import run_semantic_search
+from search.service import EmbeddingUnavailableError, run_semantic_search
 
 router = APIRouter(prefix="/api/search", tags=["Busca"])
 
@@ -44,4 +44,7 @@ async def search_articles(
     ),
 ) -> SearchResponse:
     with Session(engine) as session:
-        return await run_semantic_search(session, q, top_k)
+        try:
+            return await run_semantic_search(session, q, top_k)
+        except EmbeddingUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc

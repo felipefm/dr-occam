@@ -204,20 +204,36 @@
         input.disabled = isLoading;
       }
 
+      // Busca com IA local pode legitimamente levar bastante tempo (timeouts
+      // configuráveis via INTENT_LLM_TIMEOUT_SECONDS/EMBEDDING_TIMEOUT_SECONDS
+      // no .env, para dar tempo a um modelo local mais lento). Sem nenhum
+      // aviso, uma busca demorada parece uma tela travada — este aviso troca
+      // a mensagem depois de alguns segundos só para deixar claro que ainda
+      // está em andamento, não trocar o comportamento da busca em si.
+      var SLOW_SEARCH_HINT_MS = 15000;
+
       async function runSearch(query) {
         setLoading(true);
         setStatus("Buscando...", false);
         renderSuggestions(null);
         resultsEl.innerHTML = "";
 
+        var slowHintTimer = setTimeout(function () {
+          setStatus("Ainda buscando — a IA local pode demorar mais que o normal. Aguarde...", false);
+        }, SLOW_SEARCH_HINT_MS);
+
         try {
           var url = "/api/search?q=" + encodeURIComponent(query) + "&top_k=" + TOP_K;
           var response = await fetch(url);
-          if (!response.ok) throw new Error("status " + response.status);
+          if (!response.ok) {
+            var data = await response.json().catch(function () { return {}; });
+            throw new Error(data.detail || ("status " + response.status));
+          }
           renderResults(await response.json());
         } catch (err) {
-          setStatus("Não foi possível buscar agora. Tente novamente em instantes.", true);
+          setStatus(err.message || "Não foi possível buscar agora. Tente novamente em instantes.", true);
         } finally {
+          clearTimeout(slowHintTimer);
           setLoading(false);
         }
       }

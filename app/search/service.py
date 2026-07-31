@@ -26,6 +26,15 @@ from timezone_utils import DISPLAY_TIMEZONE
 logger = logging.getLogger(__name__)
 
 
+class EmbeddingUnavailableError(RuntimeError):
+    """Levantada quando o provedor de embedding falha ou estoura o timeout
+    ao gerar o vetor da busca. Ao contrário de `extract_date_intent`, aqui
+    não há um "modo sem IA" razoável — sem o embedding da busca não há
+    como comparar similaridade nenhuma —, então o router traduz isso num
+    503 explícito em vez de deixar a exceção genérica propagar como 500
+    silencioso ou a requisição ficar pendurada sem retorno claro."""
+
+
 def _local_date_to_utc_naive(d: date, end_of_day: bool) -> datetime:
     """Converte uma data de calendário no fuso de exibição (America/Sao_Paulo)
     para o instante UTC correspondente (início ou fim do dia local), e
@@ -100,7 +109,16 @@ async def run_semantic_search(session: Session, raw_query: str, top_k: int) -> S
             suggestions=suggestions,
         )
 
-    query_vector, _ = await generate_embedding(f"{EMBEDDING_QUERY_PREFIX}{intent.cleaned_query}")
+    try:
+        query_vector, _ = await generate_embedding(
+            f"{EMBEDDING_QUERY_PREFIX}{intent.cleaned_query}"
+        )
+    except Exception as exc:
+        logger.exception("Falha ao gerar embedding da busca %r", raw_query)
+        raise EmbeddingUnavailableError(
+            "Não foi possível gerar o embedding da busca no momento"
+        ) from exc
+
     ranked = find_similar_articles(session, query_vector, candidate_ids, top_k)
 
     articles_by_id = get_articles_by_id(session, [article_id for article_id, _ in ranked])
