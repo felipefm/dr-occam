@@ -2,8 +2,10 @@ version: '3.8'
 
 services:
   # 1. Dr. Occam (Nosso Sistema Central em FastAPI)
-  # Único container: a extração de conteúdo roda in-process via trafilatura,
-  # sem depender de um microsserviço externo de scraping/renderização.
+  # A extração de conteúdo roda in-process via trafilatura, sem depender de
+  # um microsserviço externo de scraping/renderização (ex.: Browserless).
+  # O segundo container abaixo (rsshub) é só um gerador de feeds RSS
+  # auxiliar, não um microsserviço de scraping do Dr. Occam.
   api-occam:
     build:
       context: ./app
