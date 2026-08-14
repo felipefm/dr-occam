@@ -24,25 +24,76 @@
       </p>
     </header>
 
-    <form id="search-form" class="flex flex-col sm:flex-row gap-3 mb-2">
-      <label for="search-input" class="sr-only">Buscar notícias</label>
-      <input
-        id="search-input" name="q" type="search" required minlength="1" maxlength="500"
-        autocomplete="off" autofocus
-        placeholder="O que você quer saber?"
-        class="flex-1 rounded-md bg-neutral-800 border border-neutral-700 px-4 py-3 text-base text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-      >
+    <div class="flex gap-2 mb-6 border-b border-neutral-800" role="tablist">
       <button
-        id="search-submit-btn" type="submit"
-        class="shrink-0 rounded-md bg-indigo-600 hover:bg-indigo-500 px-6 py-3 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        id="tab-btn-search" type="button" role="tab" aria-selected="true" aria-controls="search-panel"
+        class="px-4 py-2 text-sm font-medium border-b-2 border-indigo-500 text-white transition-colors"
       >🔎 Buscar</button>
-    </form>
+      <button
+        id="tab-btn-summary" type="button" role="tab" aria-selected="false" aria-controls="summary-panel"
+        class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-neutral-500 hover:text-neutral-300 transition-colors"
+      >🗞️ Resumir por período</button>
+    </div>
 
-    <p id="search-status" class="text-sm text-neutral-500 mb-4 hidden" role="status"></p>
+    <div id="search-panel" role="tabpanel" aria-labelledby="tab-btn-search">
+      <form id="search-form" class="flex flex-col sm:flex-row gap-3 mb-2">
+        <label for="search-input" class="sr-only">Buscar notícias</label>
+        <input
+          id="search-input" name="q" type="search" required minlength="1" maxlength="500"
+          autocomplete="off" autofocus
+          placeholder="O que você quer saber?"
+          class="flex-1 rounded-md bg-neutral-800 border border-neutral-700 px-4 py-3 text-base text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+        <button
+          id="search-submit-btn" type="submit"
+          class="shrink-0 rounded-md bg-indigo-600 hover:bg-indigo-500 px-6 py-3 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >🔎 Buscar</button>
+      </form>
 
-    <div id="search-suggestions" class="flex flex-wrap gap-2 mb-6 hidden"></div>
+      <p id="search-status" class="text-sm text-neutral-500 mb-4 hidden" role="status"></p>
 
-    <div id="search-results" class="flex flex-col gap-4"></div>
+      <div id="search-suggestions" class="flex flex-wrap gap-2 mb-6 hidden"></div>
+
+      <div id="search-results" class="flex flex-col gap-4"></div>
+    </div>
+
+    <div id="summary-panel" role="tabpanel" aria-labelledby="tab-btn-summary" class="hidden">
+      <p class="text-sm text-neutral-500 mb-4">
+        Gera uma síntese em texto corrido das notícias já processadas num período curto
+        (POC — sem busca por assunto, é sempre "tudo que saiu no período").
+      </p>
+
+      <div class="flex flex-wrap gap-2 mb-4" role="radiogroup" aria-label="Janela do resumo">
+        <button
+          type="button" data-days="1" role="radio" aria-checked="true"
+          class="summary-window-btn rounded-md border border-indigo-500 bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors"
+        >Hoje</button>
+        <button
+          type="button" data-days="2" role="radio" aria-checked="false"
+          class="summary-window-btn rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm font-medium text-neutral-300 hover:border-neutral-600 transition-colors"
+        >Últimos 2 dias</button>
+        <button
+          type="button" data-days="3" role="radio" aria-checked="false"
+          class="summary-window-btn rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm font-medium text-neutral-300 hover:border-neutral-600 transition-colors"
+        >Últimos 3 dias</button>
+      </div>
+
+      <button
+        id="summary-submit-btn" type="button"
+        class="rounded-md bg-indigo-600 hover:bg-indigo-500 px-6 py-3 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed mb-4"
+      >🗞️ Gerar resumo</button>
+
+      <p id="summary-status" class="text-sm text-neutral-500 mb-4 hidden" role="status"></p>
+
+      <div id="summary-result" class="hidden">
+        <article class="bg-neutral-900 border border-neutral-800 rounded-lg p-5 mb-4">
+          <p id="summary-text" class="text-sm text-neutral-300 whitespace-pre-line leading-relaxed"></p>
+        </article>
+
+        <h2 class="text-sm font-medium text-neutral-400 mb-2">Fontes usadas neste resumo</h2>
+        <ul id="summary-sources" class="flex flex-col gap-1.5"></ul>
+      </div>
+    </div>
   </div>
 
   <template id="result-card-template">
@@ -251,6 +302,155 @@
         input.value = initialQuery;
         runSearch(initialQuery);
       }
+
+      // --- Abas Buscar / Resumir por período ---
+
+      var tabBtnSearch = document.getElementById("tab-btn-search");
+      var tabBtnSummary = document.getElementById("tab-btn-summary");
+      var searchPanel = document.getElementById("search-panel");
+      var summaryPanel = document.getElementById("summary-panel");
+
+      function activateTab(name) {
+        var isSearch = name === "search";
+        searchPanel.classList.toggle("hidden", !isSearch);
+        summaryPanel.classList.toggle("hidden", isSearch);
+        tabBtnSearch.setAttribute("aria-selected", String(isSearch));
+        tabBtnSummary.setAttribute("aria-selected", String(!isSearch));
+        tabBtnSearch.classList.toggle("border-indigo-500", isSearch);
+        tabBtnSearch.classList.toggle("text-white", isSearch);
+        tabBtnSearch.classList.toggle("border-transparent", !isSearch);
+        tabBtnSearch.classList.toggle("text-neutral-500", !isSearch);
+        tabBtnSummary.classList.toggle("border-indigo-500", !isSearch);
+        tabBtnSummary.classList.toggle("text-white", !isSearch);
+        tabBtnSummary.classList.toggle("border-transparent", isSearch);
+        tabBtnSummary.classList.toggle("text-neutral-500", isSearch);
+      }
+
+      tabBtnSearch.addEventListener("click", function () { activateTab("search"); });
+      tabBtnSummary.addEventListener("click", function () { activateTab("summary"); });
+
+      // --- Resumo por período ---
+
+      var windowBtns = Array.prototype.slice.call(document.querySelectorAll(".summary-window-btn"));
+      var summarySubmitBtn = document.getElementById("summary-submit-btn");
+      var summaryStatusEl = document.getElementById("summary-status");
+      var summaryResultEl = document.getElementById("summary-result");
+      var summaryTextEl = document.getElementById("summary-text");
+      var summarySourcesEl = document.getElementById("summary-sources");
+
+      var selectedDays = 1;
+
+      function selectWindow(days) {
+        selectedDays = days;
+        windowBtns.forEach(function (btn) {
+          var isSelected = Number(btn.dataset.days) === days;
+          btn.setAttribute("aria-checked", String(isSelected));
+          btn.classList.toggle("border-indigo-500", isSelected);
+          btn.classList.toggle("bg-indigo-600", isSelected);
+          btn.classList.toggle("text-white", isSelected);
+          btn.classList.toggle("border-neutral-700", !isSelected);
+          btn.classList.toggle("bg-neutral-800", !isSelected);
+          btn.classList.toggle("text-neutral-300", !isSelected);
+        });
+      }
+
+      windowBtns.forEach(function (btn) {
+        btn.addEventListener("click", function () { selectWindow(Number(btn.dataset.days)); });
+      });
+
+      function setSummaryStatus(message, isError) {
+        if (!message) {
+          summaryStatusEl.classList.add("hidden");
+          summaryStatusEl.textContent = "";
+          return;
+        }
+        summaryStatusEl.classList.remove("hidden");
+        summaryStatusEl.textContent = message;
+        summaryStatusEl.classList.toggle("text-red-400", !!isError);
+        summaryStatusEl.classList.toggle("text-neutral-500", !isError);
+      }
+
+      function renderSummary(data) {
+        summaryTextEl.textContent = data.summary_text;
+
+        summarySourcesEl.innerHTML = "";
+        data.sources.forEach(function (source) {
+          var li = document.createElement("li");
+          var link = document.createElement("a");
+          link.href = source.url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = source.title;
+          link.className = "text-xs text-neutral-400 hover:text-neutral-200 hover:underline";
+          li.appendChild(link);
+          summarySourcesEl.appendChild(li);
+        });
+
+        summaryResultEl.classList.remove("hidden");
+
+        var note = data.article_count + " artigo(s) usado(s), de " +
+          formatIsoDate(data.start_date) + " até " + formatIsoDate(data.end_date) + ".";
+        if (data.truncated) {
+          note += " Aviso: o período tem mais artigos do que o teto suportado nesta POC — " +
+            "o resumo cobre só os mais recentes dentro do limite.";
+        }
+        if (data.pipeline_running) {
+          note += " O pipeline de coleta estava rodando durante a geração — dados mais " +
+            "recentes ainda podem não estar refletidos.";
+        }
+        setSummaryStatus(note, false);
+      }
+
+      function setSummaryLoading(isLoading) {
+        summarySubmitBtn.disabled = isLoading;
+        windowBtns.forEach(function (btn) { btn.disabled = isLoading; });
+      }
+
+      // Resumo concatena dezenas/centenas de artigos num único prompt — bem
+      // mais pesado que a busca (que só embeda a query). Medição real feita
+      // durante a POC: ~168s para a janela "hoje" (~192 artigos) no LM
+      // Studio local configurado — por isso os avisos aparecem bem mais
+      // tarde que o SLOW_SEARCH_HINT_MS da busca.
+      var SLOW_SUMMARY_HINT_MS = 20000;
+      var VERY_SLOW_SUMMARY_HINT_MS = 90000;
+
+      async function runSummary(days) {
+        setSummaryLoading(true);
+        setSummaryStatus("Gerando resumo — isso pode levar de 1 a alguns minutos com IA local...", false);
+        summaryResultEl.classList.add("hidden");
+
+        var slowTimer = setTimeout(function () {
+          setSummaryStatus("Ainda gerando — a IA local está processando um período inteiro de notícias, pode demorar mais que o normal. Aguarde...", false);
+        }, SLOW_SUMMARY_HINT_MS);
+        var verySlowTimer = setTimeout(function () {
+          setSummaryStatus("Ainda gerando — janelas maiores (2-3 dias) podem se aproximar do limite de tempo configurado. Aguarde mais um pouco...", false);
+        }, VERY_SLOW_SUMMARY_HINT_MS);
+
+        try {
+          var url = "/api/summary?days=" + encodeURIComponent(days);
+          var response = await fetch(url);
+          if (!response.ok) {
+            var data = await response.json().catch(function () { return {}; });
+            throw new Error(data.detail || ("status " + response.status));
+          }
+          var payload = await response.json();
+          if (!payload.article_count) {
+            setSummaryStatus("Nenhum artigo processado nesse período ainda.", false);
+            return;
+          }
+          renderSummary(payload);
+        } catch (err) {
+          setSummaryStatus(err.message || "Não foi possível gerar o resumo agora. Tente novamente em instantes.", true);
+        } finally {
+          clearTimeout(slowTimer);
+          clearTimeout(verySlowTimer);
+          setSummaryLoading(false);
+        }
+      }
+
+      summarySubmitBtn.addEventListener("click", function () {
+        runSummary(selectedDays);
+      });
     })();
   </script>
 </body>

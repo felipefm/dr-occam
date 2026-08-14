@@ -37,6 +37,7 @@ from models import (
 from home.router import router as home_router
 from pipeline import run_pipeline
 from search.router import router as search_router
+from summary.router import router as summary_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -87,6 +88,11 @@ TAGS_METADATA = [
         "os artigos já processados.",
     },
     {
+        "name": "Resumo",
+        "description": "POC: síntese em texto corrido dos artigos de um período curto e fixo "
+        "(hoje / últimos 2 ou 3 dias), sem busca semântica.",
+    },
+    {
         "name": "Admin",
         "description": "Painel de administração (`/admin`) para gerenciar as fontes de notícias.",
     },
@@ -126,6 +132,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 templates = Jinja2Templates(directory="templates")
 app.include_router(home_router)
 app.include_router(search_router)
+app.include_router(summary_router)
 
 
 class SourceCreatePayload(SQLModel):
