@@ -58,6 +58,7 @@ import re
 import litellm
 from sqlmodel import Session, func, select
 
+import pipeline_state
 from database import engine
 from llm_cascade import LLM_CASCADE
 from models import Article, ArticleStatus, LLMProcessingLog
@@ -276,9 +277,14 @@ async def _run_llm_batch(article_ids: list[int]) -> dict[str, int]:
     semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
     standby_queue: list[int] = []
-    await asyncio.gather(
-        *(_process_article(semaphore, aid, standby_queue) for aid in article_ids)
-    )
+
+    async def _tracked(aid: int) -> None:
+        await _process_article(semaphore, aid, standby_queue)
+        # Quem foi para a repescagem só conta quando ela terminar.
+        if aid not in standby_queue:
+            pipeline_state.article_done()
+
+    await asyncio.gather(*(_tracked(aid) for aid in article_ids))
 
     if standby_queue:
         retry_ids = list(standby_queue)
@@ -286,9 +292,11 @@ async def _run_llm_batch(article_ids: list[int]) -> dict[str, int]:
             "Repescagem: %d artigo(s) com timeout no lote principal — tentando de novo",
             len(retry_ids),
         )
-        await asyncio.gather(
-            *(_process_article(semaphore, aid, None) for aid in retry_ids)
-        )
+        async def _tracked_retry(aid: int) -> None:
+            await _process_article(semaphore, aid, None)
+            pipeline_state.article_done()
+
+        await asyncio.gather(*(_tracked_retry(aid) for aid in retry_ids))
 
     with Session(engine) as session:
         processed = session.exec(
@@ -350,6 +358,10 @@ async def run_llm_processing() -> dict[str, int]:
         )
         if not article_ids:
             break
+        if batches == 0:
+            # A fila não cresce durante esta etapa (a ingestão já terminou),
+            # então o total do primeiro lote vale para a etapa inteira.
+            pipeline_state.start_llm(total_pending)
 
         batches += 1
         batch_result = await _run_llm_batch(article_ids)

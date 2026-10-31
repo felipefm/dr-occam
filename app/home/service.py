@@ -73,10 +73,15 @@ def build_home(session: Session, now: datetime) -> dict[str, Any]:
         for scan in group_by_scan(articles, timedelta(minutes=SCAN_GAP_MINUTES))
     ]
 
-    # Fontes com mais artigos na janela primeiro — são as que mais
-    # "empurram" as outras para baixo, então ficam à mão no filtro.
-    source_counts = Counter(item["source"] for g in groups for item in g["items"])
-    sources = [name for name, _ in source_counts.most_common()]
+    # Fontes com mais notícias a ler primeiro (desempate: mais notícias na
+    # janela, depois nome). O JavaScript refaz essa ordem conforme a leitura.
+    window_items = [item for g in groups for item in g["items"]]
+    source_counts = Counter(item["source"] for item in window_items)
+    unread_counts = Counter(item["source"] for item in window_items if not item["is_read"])
+    sources = sorted(
+        source_counts,
+        key=lambda name: (-unread_counts[name], -source_counts[name], name.casefold()),
+    )
     # Fontes ativas sem nada na janela também aparecem (sem filtro), para
     # uma fonte quebrada ou parada não sumir da tela sem ninguém notar.
     quiet_sources = sorted(repository.get_active_source_names(session) - set(sources), key=str.casefold)
@@ -96,6 +101,7 @@ def build_home(session: Session, now: datetime) -> dict[str, Any]:
         "groups": groups,
         "sources": sources,
         "quiet_sources": quiet_sources,
+        "source_totals": source_counts,
         "pauta": pauta,
         "window_hours": HOME_WINDOW_HOURS,
         "window_start_iso": since.replace(tzinfo=timezone.utc).isoformat(),

@@ -3,6 +3,7 @@ leitura/pauta usadas pelo JavaScript de index.html. Lógica de montagem
 em home.service; consultas em home.repository."""
 
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
@@ -163,14 +164,20 @@ def archived_pauta(request: Request, archive_id: int) -> Response:
         "Consultado periodicamente pela tela inicial: diz se há uma execução em "
         "andamento e quantos artigos `PROCESSED` existem a partir de `since` (o início "
         "da janela da página aberta). A diferença para o que a página já mostra é o "
-        "número de notícias novas a oferecer, sem recarregar a lista sozinha."
+        "número de notícias novas a oferecer, sem recarregar a lista sozinha. "
+        "`progress` traz a etapa atual (`ingestion` ou `llm`), itens concluídos e total, "
+        "ou `null` quando não há andamento a informar."
     ),
 )
 def home_status(
     since: datetime = Query(..., description="Início da janela da página, ISO 8601."),
-) -> dict[str, bool | int]:
+) -> dict[str, Any]:
     if since.tzinfo is not None:
         since = since.astimezone(timezone.utc).replace(tzinfo=None)
     with Session(engine) as session:
         processed = repository.count_processed_since(session, since)
-    return {"pipeline_running": pipeline_state.is_running(), "processed_since": processed}
+    return {
+        "pipeline_running": pipeline_state.is_running(),
+        "progress": pipeline_state.progress(),
+        "processed_since": processed,
+    }

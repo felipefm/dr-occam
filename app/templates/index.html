@@ -115,6 +115,17 @@
     .toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
     .toolbar .btn { min-width: 40px; padding: 0 .7em; }
 
+    .scan-progress { padding-bottom: 14px; }
+    .scan-stats {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; padding: 10px 14px;
+      border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+      font-size: .87em; color: var(--muted);
+    }
+    .scan-stats .stage { color: var(--fg); font-weight: 600; margin-right: auto; }
+    /* Os números entram no mesmo flex da etapa, com o mesmo espaçamento. */
+    #scan-stats { display: contents; }
+    .scan-stats b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .scan-stats .eta b { color: var(--accent); }
     .progress-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding-bottom: 14px; }
     .progress { flex: 1 1 320px; display: flex; flex-direction: column; gap: 6px; }
     .progress-text { display: flex; justify-content: space-between; gap: 12px; font-size: .87em; color: var(--muted); }
@@ -137,7 +148,19 @@
     .source-btn .count { font-size: .8em; color: var(--accent); }
     .source-btn.is-done { color: var(--muted); }
     .source-btn.is-done .count { color: var(--muted); }
-    .quiet-label { padding-top: 16px; }
+    .source-list { display: flex; flex-direction: column; gap: 2px; }
+    .quiet-sources { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+    .quiet-sources summary {
+      display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border-radius: 8px;
+      font-size: .8em; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+      cursor: pointer; list-style: none;
+    }
+    .quiet-sources summary::-webkit-details-marker { display: none; }
+    .quiet-sources summary::before { content: "▸"; font-size: 1.1em; transition: transform .15s ease; }
+    .quiet-sources[open] summary::before { transform: rotate(90deg); }
+    .quiet-sources summary:hover { background: var(--surface-2); }
+    .quiet-sources summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .quiet-sources summary .mono { margin-left: auto; letter-spacing: 0; }
     .source-quiet {
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
       min-height: 32px; padding: 0 12px; color: var(--muted); font-size: .87em;
@@ -241,6 +264,12 @@
         <button class="btn" id="theme-toggle" type="button" aria-label="Alternar tema claro/escuro" title="Alternar tema">🌙</button>
       </div>
     </div>
+    <div class="wrap scan-progress" id="scan-progress" hidden>
+      <div class="scan-stats" role="status" aria-live="polite">
+        <span class="stage" id="scan-stage"></span>
+        <span id="scan-stats"></span>
+      </div>
+    </div>
     <div class="wrap progress-row">
       <div class="progress">
         <div class="progress-text">
@@ -260,14 +289,18 @@
     <nav class="sources" aria-label="Fontes">
       <div class="section-label">Fontes</div>
       <button class="source-btn" type="button" data-filter="" aria-pressed="true"><span class="name">Todas as fontes</span><span class="count mono"></span></button>
-      {% for name in sources %}
-      <button class="source-btn" type="button" data-filter="{{ name }}" aria-pressed="false"><span class="name">{{ name }}</span><span class="count mono"></span></button>
-      {% endfor %}
+      <div id="source-list" class="source-list">
+        {% for name in sources %}
+        <button class="source-btn" type="button" data-filter="{{ name }}" data-total="{{ source_totals[name] }}" aria-pressed="false"><span class="name">{{ name }}</span><span class="count mono"></span></button>
+        {% endfor %}
+      </div>
       {% if quiet_sources %}
-      <div class="section-label quiet-label">Sem notícias nas últimas {{ window_hours }}h</div>
-      {% for name in quiet_sources %}
-      <div class="source-quiet"><span class="name">{{ name }}</span><span class="count mono">0</span></div>
-      {% endfor %}
+      <details class="quiet-sources">
+        <summary>Sem notícias nas últimas {{ window_hours }}h <span class="mono">{{ quiet_sources|length }}</span></summary>
+        {% for name in quiet_sources %}
+        <div class="source-quiet"><span class="name">{{ name }}</span></div>
+        {% endfor %}
+      </details>
       {% endif %}
     </nav>
 
@@ -428,6 +461,20 @@
         return true;
       }
 
+      // Mais notícias a ler primeiro; mesmo critério de home/service.py.
+      var sourceList = document.getElementById('source-list');
+      function sortSources(unreadBySource) {
+        var btns = Array.prototype.slice.call(sourceList.children);
+        btns.sort(function (a, b) {
+          return (unreadBySource[b.dataset.filter] - unreadBySource[a.dataset.filter])
+            || (Number(b.dataset.total) - Number(a.dataset.total))
+            || a.dataset.filter.localeCompare(b.dataset.filter, 'pt-BR', { sensitivity: 'base' });
+        });
+        btns.forEach(function (btn, i) {
+          if (sourceList.children[i] !== btn) sourceList.insertBefore(btn, sourceList.children[i]);
+        });
+      }
+
       function render() {
         var total = items.length;
         var readCount = items.filter(isRead).length;
@@ -465,15 +512,18 @@
         markVisibleBtn.disabled = visibleUnread === 0;
         onlyUnreadBtn.setAttribute('aria-pressed', onlyUnread ? 'true' : 'false');
 
+        var unreadBySource = {};
         sourceBtns.forEach(function (btn) {
           var name = btn.dataset.filter;
           var unreadInSource = items.filter(function (el) {
             return (!name || el.dataset.source === name) && !isRead(el);
           }).length;
+          unreadBySource[name] = unreadInSource;
           btn.querySelector('.count').textContent = unreadInSource;
           btn.classList.toggle('is-done', unreadInSource === 0);
           btn.setAttribute('aria-pressed', name === filterSource ? 'true' : 'false');
         });
+        sortSources(unreadBySource);
       }
 
       function postJSON(method, url, body) {
@@ -715,9 +765,66 @@
       var scanPill = document.getElementById('scan-pill');
       var newPill = document.getElementById('new-pill');
       var runScanBtn = document.getElementById('run-scan-btn');
-      var POLL_RUNNING_MS = 5000;
+      var POLL_RUNNING_MS = 3000;
       var pollTimer = null;
       var latestTime = items.length ? items[0].querySelector('time').textContent : null;
+      var scanProgress = document.getElementById('scan-progress');
+      var scanStage = document.getElementById('scan-stage');
+      var scanStats = document.getElementById('scan-stats');
+      var wasRunning = false;
+      var hideProgressTimer = null;
+
+      function stat(value, label, cls) {
+        return '<span' + (cls ? ' class="' + cls + '"' : '') + '><b>' + value + '</b> ' + label + '</span>';
+      }
+
+      function formatEta(seconds) {
+        if (seconds === null || seconds === undefined) return null;
+        var end = new Date(Date.now() + seconds * 1000);
+        var clock = String(end.getHours()).padStart(2, '0') + ':' + String(end.getMinutes()).padStart(2, '0');
+        var span = seconds < 60 ? 'menos de 1 min' : '~' + Math.round(seconds / 60) + ' min';
+        return { span: span, clock: clock };
+      }
+
+      function renderScanProgress(data) {
+        if (data.pipeline_running) {
+          clearTimeout(hideProgressTimer);
+          scanProgress.hidden = false;
+          var p = data.progress;
+          if (!p) {
+            // Execução sem andamento informado (ex.: embeddings pelo /admin).
+            scanStage.textContent = 'Processamento em andamento';
+            scanStats.innerHTML = '';
+          } else {
+            var html = '';
+            if (p.stage === 'ingestion') {
+              scanStage.textContent = 'Etapa 1 de 2 · lendo as fontes';
+              html += stat(p.sources_done + ' de ' + p.sources_total, 'fontes varridas');
+              html += stat(p.sources_total - p.sources_done, 'restantes');
+              html += stat(p.articles_found, p.articles_found === 1 ? 'notícia nova' : 'notícias novas');
+            } else {
+              scanStage.textContent = 'Etapa 2 de 2 · resumindo com a IA';
+              if (p.sources_total) html += stat(p.sources_total + ' de ' + p.sources_total, 'fontes varridas');
+              html += stat(p.llm_done + ' de ' + p.llm_total, 'notícias resumidas');
+            }
+            var eta = formatEta(p.eta_seconds);
+            html += eta
+              ? stat(eta.span, 'para terminar (previsão ' + eta.clock + ')', 'eta')
+              : stat('…', 'calculando previsão', 'eta');
+            scanStats.innerHTML = html;
+          }
+        } else if (wasRunning) {
+          // Acabou com a página aberta: mostra a conclusão por alguns
+          // segundos antes de recolher.
+          var fresh = data.processed_since - items.length;
+          scanStage.textContent = 'Varredura concluída';
+          scanStats.innerHTML = fresh > 0
+            ? stat(fresh, fresh === 1 ? 'notícia nova — use o aviso acima da lista para mostrar' : 'notícias novas — use o aviso acima da lista para mostrar')
+            : '<span>nada novo desta vez</span>';
+          hideProgressTimer = setTimeout(function () { scanProgress.hidden = true; }, 10000);
+        }
+        wasRunning = data.pipeline_running;
+      }
 
       function pollStatus() {
         fetch('/api/home/status?since=' + encodeURIComponent(WINDOW_START))
@@ -729,6 +836,7 @@
             scanPill.textContent = data.pipeline_running
               ? 'Varredura em andamento'
               : (latestTime ? 'Última notícia às ' + latestTime : 'Nenhuma varredura em andamento');
+            renderScanProgress(data);
             var fresh = data.processed_since - items.length;
             newPill.hidden = fresh <= 0;
             if (fresh > 0) newPill.textContent = plural(fresh, 'notícia nova', 'notícias novas') + ' — mostrar';

@@ -38,6 +38,7 @@ import trafilatura
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+import pipeline_state
 from database import engine
 from http_headers import random_profile
 from models import Article, ArticleStatus, Source, SourceType
@@ -397,10 +398,15 @@ async def run_ingestion() -> dict[str, int]:
         return {}
 
     feed_semaphore = asyncio.Semaphore(MAX_CONCURRENT_FEEDS)
+    pipeline_state.start_ingestion(len(sources))
 
     async def _bounded(source: Source) -> tuple[str, int]:
         async with feed_semaphore:
-            count = await _process_source(client, source)
+            count = 0
+            try:
+                count = await _process_source(client, source)
+            finally:
+                pipeline_state.source_done(count)
             return source.name, count
 
     profile = random_profile()
