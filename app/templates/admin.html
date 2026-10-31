@@ -98,6 +98,11 @@
           class="w-full sm:w-auto rounded-md bg-amber-600 hover:bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >☠ Reprocessar DEAD</button>
         <button
+          id="embedding-backfill-btn"
+          title="Gera os embeddings dos artigos processados que ainda não aparecem na busca"
+          class="w-full sm:w-auto rounded-md bg-sky-700 hover:bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >🧭 Gerar embeddings</button>
+        <button
           id="open-logs-btn"
           class="w-full sm:w-auto rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors"
         >🖥 Ver logs</button>
@@ -641,6 +646,28 @@
         setTimeout(() => {
           reprocessDeadBtn.disabled = false;
           reprocessDeadBtn.textContent = originalText;
+        }, 1500);
+      }
+    });
+
+    // --- Gerar embeddings ---
+    const embeddingBackfillBtn = document.getElementById('embedding-backfill-btn');
+
+    embeddingBackfillBtn.addEventListener('click', async () => {
+      embeddingBackfillBtn.disabled = true;
+      const originalText = embeddingBackfillBtn.textContent;
+      embeddingBackfillBtn.textContent = 'Iniciando...';
+      try {
+        const res = await fetch('/embeddings/backfill', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `Erro ${res.status}`);
+        openLogsModal();
+      } catch (err) {
+        alert('Falha ao iniciar a geração de embeddings: ' + err.message);
+      } finally {
+        setTimeout(() => {
+          embeddingBackfillBtn.disabled = false;
+          embeddingBackfillBtn.textContent = originalText;
         }, 1500);
       }
     });

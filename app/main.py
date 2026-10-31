@@ -22,6 +22,7 @@ from sqlmodel import Field, Session, SQLModel, select
 import pipeline_state
 import scheduler as scheduler_service
 from database import create_db_and_tables, engine
+from embeddings.backfill import run_embedding_backfill
 from llm_processor import run_llm_processing
 from models import (
     Article,
@@ -312,6 +313,47 @@ def reprocess_dead_articles(
         background_tasks.add_task(_run_llm_reprocessing)
 
     return {"message": "Reprocessamento iniciado", "articles_resurrected": resurrected}
+
+
+async def _run_embedding_backfill() -> None:
+    if not pipeline_state.try_acquire():
+        logger.warning(
+            "Backfill de embeddings: já existe uma execução em andamento — disparo ignorado"
+        )
+        return
+
+    logger.info("Backfill de embeddings: gatilho recebido, iniciando em background")
+    try:
+        await run_embedding_backfill()
+    except Exception as e:
+        logger.error("Backfill de embeddings: falha durante a execução: %s", e)
+        traceback.print_exc()
+    finally:
+        pipeline_state.release()
+
+
+@app.post(
+    "/embeddings/backfill",
+    status_code=202,
+    tags=["Pipeline"],
+    summary="Gerar embeddings dos artigos processados que ainda não têm",
+    description=(
+        "Dispara em background o mesmo backfill de `python -m embeddings.backfill`: gera o "
+        "vetor de todo artigo `PROCESSED` sem embedding, deixando-o visível na busca "
+        "semântica (`/search`). Idempotente — artigos que já têm embedding são pulados. "
+        "Compartilha a trava do pipeline: responde 409 se uma varredura ou reprocessamento "
+        "estiver em andamento. O progresso pode ser acompanhado em `GET /api/logs`."
+    ),
+    response_description="Confirmação de que o backfill foi agendado para execução em background.",
+)
+async def trigger_embedding_backfill(background_tasks: BackgroundTasks) -> dict[str, str]:
+    if pipeline_state.is_running():
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe uma execução em andamento — aguarde ela terminar antes de gerar embeddings.",
+        )
+    background_tasks.add_task(_run_embedding_backfill)
+    return {"message": "Backfill de embeddings iniciado"}
 
 
 @app.get(

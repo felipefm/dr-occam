@@ -75,6 +75,8 @@ O vetor de cada artigo é gerado por `app/embeddings/service.py` (título + resu
 
 A geração de embeddings **ainda não é automática** — não está integrada ao `run_pipeline()` (é uma etapa manual, deliberadamente separada até o design da busca estar validado; ver Roadmap). Isso significa que todo artigo novo que o pipeline processa (`PENDING` → `PROCESSED`) fica **sem embedding e de fora da busca** até o script de backfill rodar. O script é idempotente — só processa artigos `PROCESSED` que ainda não têm embedding salvo (`get_article_ids_missing_embedding`), então rodá-lo de novo depois de cada varredura é seguro e rápido (não reprocessa o que já tem vetor).
 
+O jeito mais simples é o botão **"🧭 Gerar embeddings"** do `/admin` (dispara `POST /embeddings/backfill`, roda em background com a mesma trava do pipeline — responde `409` se houver varredura em andamento — e abre o modal de logs). Pelo terminal, também dá pra rodar o mesmo script diretamente.
+
 Rodar o backfill **em primeiro plano** (bloqueia o terminal até terminar — bom para acompanhar o progresso em tempo real, ex. logo depois de zerar a base ou popular muitos artigos de uma vez):
 
 ```bash
