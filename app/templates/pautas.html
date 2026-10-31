@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pautas arquivadas — Dr. Occam</title>
+  <style>
+    :root {
+      --bg: #f6f7f8; --surface: #ffffff; --fg: #16181b; --fg-soft: #3d4248;
+      --muted: #646b73; --border: #dfe2e6; --link: #0b57d0; --pauta: #a15c00;
+    }
+    :root[data-theme="dark"] {
+      --bg: #111317; --surface: #15171b; --fg: #f1f2f3; --fg-soft: #c9cdd2;
+      --muted: #9aa0a6; --border: #262a31; --link: #7fb1ff; --pauta: #fbbf24;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #111317; --surface: #15171b; --fg: #f1f2f3; --fg-soft: #c9cdd2;
+        --muted: #9aa0a6; --border: #262a31; --link: #7fb1ff; --pauta: #fbbf24;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0 auto; max-width: 760px; padding: 24px 16px 48px;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 15px;
+      background: var(--bg); color: var(--fg);
+    }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+    header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 20px; }
+    h1 { margin: 0; font-size: 1.4em; }
+    .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+    .card { display: block; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--fg); }
+    .card:hover { border-color: var(--muted); text-decoration: none; }
+    .card-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+    .card-head strong { font-weight: 600; }
+    .count { color: var(--pauta); font-size: .87em; white-space: nowrap; }
+    .titles { margin: 0; padding-left: 1.2em; color: var(--fg-soft); font-size: .93em; line-height: 1.5; }
+    .more { color: var(--muted); font-size: .87em; margin-top: 4px; }
+    .empty { padding: 40px 16px; text-align: center; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); }
+  </style>
+  <script>
+    // Mesmo tema escolhido na tela inicial (preferência deste navegador).
+    (function () {
+      try {
+        var theme = localStorage.getItem('occam-theme');
+        if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <header>
+    <h1>Pautas arquivadas</h1>
+    <a href="/">← Tela inicial</a>
+  </header>
+  {% if archives %}
+  <ol class="list">
+    {% for a in archives %}
+    <li>
+      <a class="card" href="/pautas/{{ a.id }}">
+        <span class="card-head">
+          <strong>Pauta de {{ a.label }}</strong>
+          <span class="count">{{ a.count }} {{ "tema" if a.count == 1 else "temas" }}</span>
+        </span>
+        <ol class="titles">
+          {% for title in a.titles[:3] %}<li>{{ title }}</li>{% endfor %}
+        </ol>
+        {% if a.count > 3 %}<div class="more">e mais {{ a.count - 3 }}</div>{% endif %}
+      </a>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <div class="empty">Nenhuma pauta arquivada ainda. Na tela inicial, use “Arquivar pauta” depois de enviar ou salvar uma pauta.</div>
+  {% endif %}
+</body>
+</html>

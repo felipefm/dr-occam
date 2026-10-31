@@ -25,22 +25,27 @@
     p { margin: 0 0 6px; white-space: pre-line; }
     .source { font-family: system-ui, sans-serif; font-size: 9.5pt; color: #555b62; }
     a { color: #0b57d0; word-break: break-all; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 24px; }
+    .back { font: 11pt system-ui, sans-serif; }
     .print-btn {
-      font: 600 11pt system-ui, sans-serif; min-height: 44px; padding: 0 18px; margin-bottom: 24px;
+      font: 600 11pt system-ui, sans-serif; min-height: 44px; padding: 0 18px;
       border-radius: 8px; border: 1px solid #0d8a69; background: #0d8a69; color: #fff; cursor: pointer;
     }
     @media print {
       body { padding: 0; }
-      .print-btn { display: none; }
+      .toolbar { display: none; }
       a { color: #16181b; }
     }
   </style>
 </head>
 <body>
-  <button class="print-btn" type="button" onclick="window.print()">Imprimir ou salvar como PDF</button>
+  <div class="toolbar">
+    <button class="print-btn" type="button" onclick="window.print()">Imprimir ou salvar como PDF</button>
+    {% if back_url %}<a class="back" href="{{ back_url }}">← Pautas arquivadas</a>{% endif %}
+  </div>
   <header>
     <h1>Pauta</h1>
-    <span class="meta">Dr. Occam · gerada em {{ generated_at }}</span>
+    <span class="meta">Dr. Occam · {{ subtitle }}</span>
   </header>
   {% if items %}
   <ol>
@@ -54,7 +59,7 @@
     {% endfor %}
   </ol>
   {% else %}
-  <p>A pauta está vazia. Adicione notícias pela tela inicial.</p>
+  <p>A pauta está vazia. Adicione notícias pela <a href="/">tela inicial</a>.</p>
   {% endif %}
 </body>
 </html>

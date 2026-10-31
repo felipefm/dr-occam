@@ -83,6 +83,8 @@
     .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
     .btn:disabled { opacity: .5; cursor: not-allowed; }
     .btn-small { min-height: 36px; font-size: .84em; }
+    .btn-primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    .btn-primary:hover { border-color: var(--accent); filter: brightness(1.08); }
 
     header.top {
       position: sticky; top: 0; z-index: 10;
@@ -135,6 +137,12 @@
     .source-btn .count { font-size: .8em; color: var(--accent); }
     .source-btn.is-done { color: var(--muted); }
     .source-btn.is-done .count { color: var(--muted); }
+    .quiet-label { padding-top: 16px; }
+    .source-quiet {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      min-height: 32px; padding: 0 12px; color: var(--muted); font-size: .87em;
+    }
+    .source-quiet .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     main.feed { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
     .new-pill {
@@ -182,7 +190,9 @@
     }
     .pauta-head { display: flex; align-items: baseline; justify-content: space-between; }
     .pauta-head h2 { margin: 0; font-size: 1em; }
-    .pauta-head .mono { font-size: .8em; color: var(--muted); }
+    .pauta-head .mono { font-size: .8em; color: var(--muted); margin-left: 6px; font-weight: 400; }
+    .pauta-head a { font-size: .85em; }
+    .pauta-finish { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
     .pauta-hint { margin: 0; font-size: .87em; line-height: 1.5; color: var(--muted); }
     .pauta-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
     .pauta-list li { display: flex; gap: 8px; align-items: flex-start; padding: 10px 8px 10px 12px; border-radius: 8px; background: var(--surface-2); }
@@ -223,6 +233,7 @@
         <input id="home-search" name="q" type="search" placeholder="Buscar: o que saiu sobre eleições em Israel nesta semana">
       </form>
       <span id="scan-pill" class="scan-pill" role="status">Verificando varredura…</span>
+      <button class="btn btn-primary" id="run-scan-btn" type="button">Executar varredura</button>
       <a class="btn" href="/admin">Gerenciar fontes</a>
       <div class="toolbar">
         <button class="btn" id="font-decrease" type="button" aria-label="Diminuir fonte" title="Diminuir fonte">A−</button>
@@ -252,6 +263,12 @@
       {% for name in sources %}
       <button class="source-btn" type="button" data-filter="{{ name }}" aria-pressed="false"><span class="name">{{ name }}</span><span class="count mono"></span></button>
       {% endfor %}
+      {% if quiet_sources %}
+      <div class="section-label quiet-label">Sem notícias nas últimas {{ window_hours }}h</div>
+      {% for name in quiet_sources %}
+      <div class="source-quiet"><span class="name">{{ name }}</span><span class="count mono">0</span></div>
+      {% endfor %}
+      {% endif %}
     </nav>
 
     <main class="feed">
@@ -301,8 +318,8 @@
 
     <aside class="pauta" aria-label="Pauta">
       <div class="pauta-head">
-        <h2>Pauta</h2>
-        <span class="mono" id="pauta-count">0</span>
+        <h2>Pauta<span class="mono" id="pauta-count">0</span></h2>
+        <a href="/pautas">Pautas arquivadas →</a>
       </div>
       <p class="pauta-hint" id="pauta-hint">Abra uma notícia e use “Adicionar à pauta” para separar os temas do dia.</p>
       <ol class="pauta-list" id="pauta-list"></ol>
@@ -314,11 +331,14 @@
           <button class="btn" type="button" id="pauta-copy">Copiar texto</button>
           <a class="btn" href="/pauta/imprimir" target="_blank" rel="noopener">Baixar PDF</a>
         </div>
-        <p class="pauta-feedback" id="pauta-feedback" role="status"></p>
         <div class="section-label" style="padding: 0">Prévia do texto</div>
         <pre class="pauta-preview mono" id="pauta-preview"></pre>
-        <button class="link-quiet" type="button" id="pauta-clear">Esvaziar pauta</button>
+        <div class="pauta-finish">
+          <button class="btn btn-primary" type="button" id="pauta-archive">Arquivar pauta</button>
+          <button class="link-quiet" type="button" id="pauta-clear">Descartar sem arquivar</button>
+        </div>
       </div>
+      <p class="pauta-feedback" id="pauta-feedback" role="status"></p>
     </aside>
   </div>
 
@@ -664,8 +684,21 @@
         document.body.removeChild(ta);
         sayPauta(ok ? 'Texto da pauta copiado, com os resumos.' : 'Não foi possível copiar.');
       });
+      // Arquivar = guardar uma cópia em /pautas e começar uma pauta nova.
+      // Sem atualização otimista: a pauta só some depois de salva.
+      var archiveBtn = document.getElementById('pauta-archive');
+      archiveBtn.addEventListener('click', function () {
+        archiveBtn.disabled = true;
+        postJSON('POST', '/api/pauta/archive').then(function () {
+          pauta = [];
+          renderPauta();
+          sayPauta('Pauta arquivada — ela fica em “Pautas arquivadas”.');
+        }).catch(function (err) {
+          alert('Não foi possível arquivar a pauta: ' + err.message);
+        }).then(function () { archiveBtn.disabled = false; });
+      });
       document.getElementById('pauta-clear').addEventListener('click', function () {
-        if (!confirm('Tirar todas as notícias da pauta?')) return;
+        if (!confirm('Descartar a pauta sem arquivar? As notícias saem da pauta e nada é guardado.')) return;
         var previous = pauta.slice();
         pauta = [];
         renderPauta();
@@ -681,6 +714,9 @@
       // depois que a página abriu viram um botão "N novas — mostrar".
       var scanPill = document.getElementById('scan-pill');
       var newPill = document.getElementById('new-pill');
+      var runScanBtn = document.getElementById('run-scan-btn');
+      var POLL_RUNNING_MS = 5000;
+      var pollTimer = null;
       var latestTime = items.length ? items[0].querySelector('time').textContent : null;
 
       function pollStatus() {
@@ -688,6 +724,8 @@
           .then(function (res) { if (!res.ok) throw new Error(); return res.json(); })
           .then(function (data) {
             scanPill.classList.toggle('is-running', data.pipeline_running);
+            runScanBtn.disabled = data.pipeline_running;
+            runScanBtn.textContent = data.pipeline_running ? 'Executando…' : 'Executar varredura';
             scanPill.textContent = data.pipeline_running
               ? 'Varredura em andamento'
               : (latestTime ? 'Última notícia às ' + latestTime : 'Nenhuma varredura em andamento');
@@ -695,14 +733,36 @@
             newPill.hidden = fresh <= 0;
             if (fresh > 0) newPill.textContent = plural(fresh, 'notícia nova', 'notícias novas') + ' — mostrar';
           })
-          .catch(function () { scanPill.textContent = 'Sem conexão com o servidor'; });
+          .catch(function () { scanPill.textContent = 'Sem conexão com o servidor'; })
+          .then(function () {
+            // Durante uma varredura, consulta com mais frequência para o
+            // aviso de notícias novas acompanhar o processamento.
+            clearTimeout(pollTimer);
+            pollTimer = setTimeout(pollStatus, scanPill.classList.contains('is-running') ? POLL_RUNNING_MS : POLL_MS);
+          });
       }
+
+      runScanBtn.addEventListener('click', function () {
+        runScanBtn.disabled = true;
+        runScanBtn.textContent = 'Iniciando…';
+        fetch('/trigger-pipeline', { method: 'POST' })
+          .then(function (res) {
+            return res.json().catch(function () { return {}; }).then(function (data) {
+              // 409 = já existe uma varredura rodando: não é erro para quem clicou.
+              if (!res.ok && res.status !== 409) throw new Error(data.detail || 'Erro ' + res.status);
+            });
+          })
+          .catch(function (err) { alert('Falha ao iniciar a varredura: ' + err.message); })
+          // A varredura começa logo após a resposta (background task): um
+          // segundo de folga evita consultar o status antes de ela marcar
+          // que está rodando.
+          .then(function () { setTimeout(pollStatus, 1000); });
+      });
       newPill.addEventListener('click', function () { location.reload(); });
 
       render();
       renderPauta();
       pollStatus();
-      setInterval(pollStatus, POLL_MS);
     })();
   </script>
 </body>

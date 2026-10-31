@@ -84,6 +84,19 @@ class Article(SQLModel, table=True):
     processing_logs: list["LLMProcessingLog"] = Relationship(back_populates="article")
 
 
+class PautaArchive(SQLModel, table=True):
+    """Pauta arquivada: uma cópia (título, resumo, fonte, link) de cada
+    notícia que estava na pauta no momento do arquivamento. É uma cópia, e
+    não uma referência a `article`, para sobreviver à limpeza de artigos
+    antigos (DELETE /api/articles)."""
+
+    __tablename__ = "pauta_archive"
+
+    id: int | None = Field(default=None, primary_key=True)
+    archived_at: datetime = Field(default_factory=_utcnow, nullable=False, index=True)
+    items: list[dict] = Field(sa_column=Column(JSON, nullable=False))
+
+
 class ScheduleConfig(SQLModel, table=True):
     """Configuração persistida do agendador interno do pipeline (ver
     scheduler.py). Linha única na tabela — sempre lida/gravada por inteiro,

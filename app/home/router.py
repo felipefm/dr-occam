@@ -110,6 +110,52 @@ def clear_pauta() -> dict[str, int]:
     return {"removed": removed}
 
 
+@router.post(
+    "/api/pauta/archive",
+    status_code=201,
+    summary="Arquivar a pauta atual",
+    description=(
+        "Guarda uma cópia da pauta atual (título, resumo, fonte e link de cada notícia) "
+        "em `pauta_archive` e esvazia a pauta. Responde 409 se a pauta estiver vazia. "
+        "As pautas arquivadas ficam em `/pautas`."
+    ),
+    response_description="O id da pauta arquivada.",
+)
+def archive_pauta() -> dict[str, int]:
+    with Session(engine) as session:
+        try:
+            archive_id = service.archive_pauta(session, datetime.now(timezone.utc))
+        except service.EmptyPautaError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"id": archive_id}
+
+
+@router.get(
+    "/pautas",
+    response_class=HTMLResponse,
+    summary="Lista de pautas arquivadas",
+    response_description="Página HTML com as pautas arquivadas, mais recentes primeiro.",
+)
+def pauta_archives(request: Request) -> Response:
+    with Session(engine) as session:
+        context = service.build_pauta_archives(session)
+    return templates.TemplateResponse(request=request, name="pautas.html", context=context)
+
+
+@router.get(
+    "/pautas/{archive_id}",
+    response_class=HTMLResponse,
+    summary="Pauta arquivada, pronta para imprimir",
+    response_description="Página HTML da pauta arquivada, no mesmo formato de /pauta/imprimir.",
+)
+def archived_pauta(request: Request, archive_id: int) -> Response:
+    with Session(engine) as session:
+        context = service.build_archived_pauta_print(session, archive_id)
+    if context is None:
+        raise HTTPException(status_code=404, detail="Pauta arquivada não encontrada")
+    return templates.TemplateResponse(request=request, name="pauta_print.html", context=context)
+
+
 @router.get(
     "/api/home/status",
     summary="Situação da varredura e contagem de artigos para a tela inicial",

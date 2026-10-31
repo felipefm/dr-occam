@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import func, update
 from sqlmodel import Session, select
 
-from models import Article, ArticleStatus, Source
+from models import Article, ArticleStatus, PautaArchive, Source
 
 
 def get_window_articles(session: Session, since: datetime) -> list[Article]:
@@ -36,6 +36,10 @@ def get_pauta_articles(session: Session) -> list[Article]:
 
 def get_source_names(session: Session) -> dict[int, str]:
     return {s.id: s.name for s in session.exec(select(Source)).all()}
+
+
+def get_active_source_names(session: Session) -> set[str]:
+    return set(session.exec(select(Source.name).where(Source.active.is_(True))).all())
 
 
 def count_processed_since(session: Session, since: datetime) -> int:
@@ -70,3 +74,26 @@ def clear_pauta(session: Session) -> int:
     )
     session.commit()
     return result.rowcount
+
+
+def archive_and_clear_pauta(session: Session, items: list[dict], archived_at: datetime) -> PautaArchive:
+    """Grava a cópia da pauta e a esvazia na mesma transação — nunca fica
+    uma pauta arquivada que continua aberta, nem uma esvaziada sem cópia."""
+    archive = PautaArchive(archived_at=archived_at, items=items)
+    session.add(archive)
+    session.execute(
+        update(Article).where(Article.in_pauta_at.is_not(None)).values(in_pauta_at=None)
+    )
+    session.commit()
+    session.refresh(archive)
+    return archive
+
+
+def list_pauta_archives(session: Session) -> list[PautaArchive]:
+    return list(
+        session.exec(select(PautaArchive).order_by(PautaArchive.archived_at.desc())).all()
+    )
+
+
+def get_pauta_archive(session: Session, archive_id: int) -> PautaArchive | None:
+    return session.get(PautaArchive, archive_id)

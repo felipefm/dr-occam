@@ -77,6 +77,9 @@ def build_home(session: Session, now: datetime) -> dict[str, Any]:
     # "empurram" as outras para baixo, então ficam à mão no filtro.
     source_counts = Counter(item["source"] for g in groups for item in g["items"])
     sources = [name for name, _ in source_counts.most_common()]
+    # Fontes ativas sem nada na janela também aparecem (sem filtro), para
+    # uma fonte quebrada ou parada não sumir da tela sem ninguém notar.
+    quiet_sources = sorted(repository.get_active_source_names(session) - set(sources), key=str.casefold)
 
     pauta = [
         {
@@ -92,6 +95,7 @@ def build_home(session: Session, now: datetime) -> dict[str, Any]:
     return {
         "groups": groups,
         "sources": sources,
+        "quiet_sources": quiet_sources,
         "pauta": pauta,
         "window_hours": HOME_WINDOW_HOURS,
         "window_start_iso": since.replace(tzinfo=timezone.utc).isoformat(),
@@ -99,18 +103,64 @@ def build_home(session: Session, now: datetime) -> dict[str, Any]:
     }
 
 
-def build_pauta_print(session: Session, now: datetime) -> dict[str, Any]:
+def _pauta_items(session: Session) -> list[dict[str, Any]]:
+    """A pauta atual no formato da impressão — o mesmo guardado ao arquivar."""
     source_names = repository.get_source_names(session)
+    return [
+        {
+            "title": a.ai_title or "(sem título)",
+            "summary": format_summary(a),
+            "url": a.original_url,
+            "source": source_names.get(a.source_id, REMOVED_SOURCE_NAME),
+            "date": f"{to_display_timezone(a.created_at):%d/%m/%Y %H:%M}",
+        }
+        for a in repository.get_pauta_articles(session)
+    ]
+
+
+def build_pauta_print(session: Session, now: datetime) -> dict[str, Any]:
     return {
-        "items": [
+        "items": _pauta_items(session),
+        "subtitle": f"gerada em {to_display_timezone(now):%d/%m/%Y %H:%M}",
+    }
+
+
+class EmptyPautaError(Exception):
+    pass
+
+
+def archive_pauta(session: Session, now: datetime) -> int:
+    """Arquiva a pauta atual e a esvazia. Retorna o id do arquivo."""
+    items = _pauta_items(session)
+    if not items:
+        raise EmptyPautaError("A pauta está vazia — não há nada para arquivar.")
+    return repository.archive_and_clear_pauta(session, items, now).id
+
+
+def _archive_label(archived_at: datetime) -> str:
+    return f"{to_display_timezone(archived_at):%d/%m/%Y %H:%M}"
+
+
+def build_pauta_archives(session: Session) -> dict[str, Any]:
+    return {
+        "archives": [
             {
-                "title": a.ai_title or "(sem título)",
-                "summary": format_summary(a),
-                "url": a.original_url,
-                "source": source_names.get(a.source_id, REMOVED_SOURCE_NAME),
-                "date": f"{to_display_timezone(a.created_at):%d/%m/%Y %H:%M}",
+                "id": a.id,
+                "label": _archive_label(a.archived_at),
+                "count": len(a.items),
+                "titles": [item["title"] for item in a.items],
             }
-            for a in repository.get_pauta_articles(session)
-        ],
-        "generated_at": f"{to_display_timezone(now):%d/%m/%Y %H:%M}",
+            for a in repository.list_pauta_archives(session)
+        ]
+    }
+
+
+def build_archived_pauta_print(session: Session, archive_id: int) -> dict[str, Any] | None:
+    archive = repository.get_pauta_archive(session, archive_id)
+    if archive is None:
+        return None
+    return {
+        "items": archive.items,
+        "subtitle": f"arquivada em {_archive_label(archive.archived_at)}",
+        "back_url": "/pautas",
     }
