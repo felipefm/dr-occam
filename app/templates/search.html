@@ -244,6 +244,13 @@
         if (!query) return;
         runSearch(query);
       });
+
+      // Busca vinda do campo da tela inicial (/search?q=...).
+      var initialQuery = (new URLSearchParams(location.search).get("q") || "").trim();
+      if (initialQuery) {
+        input.value = initialQuery;
+        runSearch(initialQuery);
+      }
     })();
   </script>
 </body>

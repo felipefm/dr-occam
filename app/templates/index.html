@@ -6,157 +6,325 @@
   <title>Dr. Occam</title>
   <style>
     :root {
-      --bg: #ffffff;
-      --fg: #1a1a1a;
-      --muted: #6b6b6b;
-      --border: #e0e0e0;
+      --bg: #f6f7f8;
+      --surface: #ffffff;
+      --surface-2: #f0f2f4;
+      --fg: #16181b;
+      --fg-soft: #3d4248;
+      --muted: #646b73;
+      --border: #dfe2e6;
       --link: #0b57d0;
-      --card-bg: #ffffff;
+      --accent: #0d8a69;
+      --accent-ink: #ffffff;
+      --accent-soft: rgba(13, 138, 105, .12);
+      --pauta: #a15c00;
+      --pauta-soft: rgba(161, 92, 0, .1);
+      --header-bg: rgba(246, 247, 248, .92);
       --font-scale: 1;
-      --accent: #0f9d78;
-      --accent-soft: rgba(15, 157, 120, .1);
     }
     :root[data-theme="dark"] {
-      --bg: #15171b;
-      --fg: #e8e8e8;
-      --muted: #9a9a9a;
-      --border: #2a2d33;
+      --bg: #111317;
+      --surface: #15171b;
+      --surface-2: #1b1e24;
+      --fg: #f1f2f3;
+      --fg-soft: #c9cdd2;
+      --muted: #9aa0a6;
+      --border: #262a31;
       --link: #7fb1ff;
-      --card-bg: #1b1e24;
       --accent: #34d399;
+      --accent-ink: #0b1f17;
       --accent-soft: rgba(52, 211, 153, .14);
+      --pauta: #fbbf24;
+      --pauta-soft: rgba(251, 191, 36, .12);
+      --header-bg: rgba(17, 19, 23, .92);
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
-        --bg: #15171b;
-        --fg: #e8e8e8;
-        --muted: #9a9a9a;
-        --border: #2a2d33;
+        --bg: #111317;
+        --surface: #15171b;
+        --surface-2: #1b1e24;
+        --fg: #f1f2f3;
+        --fg-soft: #c9cdd2;
+        --muted: #9aa0a6;
+        --border: #262a31;
         --link: #7fb1ff;
-        --card-bg: #1b1e24;
         --accent: #34d399;
+        --accent-ink: #0b1f17;
         --accent-soft: rgba(52, 211, 153, .14);
+        --pauta: #fbbf24;
+        --pauta-soft: rgba(251, 191, 36, .12);
+        --header-bg: rgba(17, 19, 23, .92);
       }
     }
     * { box-sizing: border-box; }
     body {
-      font-family: system-ui, -apple-system, sans-serif;
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 1.5rem 1rem 3rem;
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: calc(15px * var(--font-scale));
       background: var(--bg);
       color: var(--fg);
-      font-size: calc(1rem * var(--font-scale));
       transition: background .15s ease, color .15s ease;
     }
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      flex-wrap: wrap;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 1rem;
-      margin-bottom: 1rem;
-    }
-    h1 { font-size: 1.4em; margin: 0; }
-    h1 a { font-size: .5em; font-weight: normal; margin-left: .6em; }
-    .toolbar { display: flex; gap: .4rem; align-items: center; }
-    .toolbar button {
-      font: inherit;
-      font-size: .85em;
-      border: 1px solid var(--border);
-      background: var(--card-bg);
-      color: var(--fg);
-      border-radius: .4em;
-      padding: .35em .65em;
-      cursor: pointer;
-      line-height: 1;
-    }
-    .toolbar button:hover { border-color: var(--link); }
     a { color: var(--link); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    .card {
+    button { font: inherit; color: inherit; }
+    button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .wrap { max-width: 1360px; margin: 0 auto; padding: 0 24px; }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+      min-height: 40px; padding: 0 .95em; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--fg);
+      font-size: .87em; cursor: pointer; text-decoration: none; white-space: nowrap;
+    }
+    .btn:hover { border-color: var(--muted); text-decoration: none; }
+    .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-small { min-height: 36px; font-size: .84em; }
+
+    header.top {
+      position: sticky; top: 0; z-index: 10;
+      background: var(--header-bg); backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--border);
-      border-left: 3px solid transparent;
-      padding: 1.1em 0 1.1em .9em;
-      margin-left: -.9em;
-      transition: border-color .3s ease, background-color .3s ease;
     }
-    .card.is-new {
-      border-left-color: var(--accent);
-      background: var(--accent-soft);
-      border-radius: 0 .5em .5em 0;
+    .top-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding-top: 14px; padding-bottom: 12px; }
+    .brand { display: flex; align-items: baseline; gap: 10px; }
+    .brand h1 { margin: 0; font-size: 1.33em; letter-spacing: -.01em; }
+    .brand .mono { font-size: .8em; color: var(--muted); }
+    .search { flex: 1 1 260px; min-width: 0; }
+    .search input {
+      width: 100%; height: 44px; padding: 0 14px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--fg); font: inherit; font-size: .93em;
     }
-    .card h2 { margin: 0 0 .3em; font-size: 1.1em; }
-    .card .meta { display: flex; align-items: center; gap: .6em; }
-    .card time { color: var(--muted); font-size: .85em; }
-    .badge-new {
-      display: inline-flex;
-      align-items: center;
-      gap: .4em;
-      font-size: .7em;
-      font-weight: 600;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-      color: var(--accent);
+    .scan-pill {
+      display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px;
+      border-radius: 999px; border: 1px solid var(--border); font-size: .85em; color: var(--muted);
     }
-    .badge-new::before {
-      content: "";
-      width: .5em;
-      height: .5em;
-      border-radius: 50%;
-      background: var(--accent);
-      animation: occam-pulse 2s ease-in-out infinite;
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .badge-new::before { animation: none; }
-    }
+    .scan-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .scan-pill.is-running { border-color: var(--accent); color: var(--fg); background: var(--accent-soft); }
+    .scan-pill.is-running::before { background: var(--accent); animation: occam-pulse 2s ease-in-out infinite; }
     @keyframes occam-pulse {
-      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--accent-soft); }
-      50% { opacity: .6; box-shadow: 0 0 0 .3em var(--accent-soft); }
+      0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+      50% { box-shadow: 0 0 0 5px var(--accent-soft); }
     }
-    .card p { white-space: pre-line; margin: .6em 0; }
-    .share-row { display: flex; gap: .6em; margin-top: .5em; }
-    .share-row a {
-      font-size: .8em;
-      border: 1px solid var(--border);
-      border-radius: .4em;
-      padding: .25em .7em;
-      color: var(--muted);
+    @media (prefers-reduced-motion: reduce) { .scan-pill.is-running::before { animation: none; } }
+    .toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+    .toolbar .btn { min-width: 40px; padding: 0 .7em; }
+
+    .progress-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding-bottom: 14px; }
+    .progress { flex: 1 1 320px; display: flex; flex-direction: column; gap: 6px; }
+    .progress-text { display: flex; justify-content: space-between; gap: 12px; font-size: .87em; color: var(--muted); }
+    .progress-text b { color: var(--fg); font-weight: 600; }
+    .bar { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+    .bar > span { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width .4s ease; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .layout { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; padding-top: 20px; padding-bottom: 64px; }
+    nav.sources { flex: 1 1 220px; max-width: 100%; display: flex; flex-direction: column; gap: 2px; }
+    .section-label { font-size: .8em; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 0 12px 8px; }
+    .source-btn {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent;
+      color: var(--fg-soft); font-size: .93em; text-align: left; cursor: pointer;
     }
-    .share-row a:hover { color: var(--link); border-color: var(--link); text-decoration: none; }
+    .source-btn:hover { background: var(--surface-2); }
+    .source-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--fg); }
+    .source-btn .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .source-btn .count { font-size: .8em; color: var(--accent); }
+    .source-btn.is-done { color: var(--muted); }
+    .source-btn.is-done .count { color: var(--muted); }
+
+    main.feed { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+    .new-pill {
+      align-self: center; position: sticky; top: 140px; z-index: 5;
+      min-height: 40px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--accent);
+      background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: .93em; cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+    }
+    .scan { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+    .scan-head {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2);
+    }
+    .scan-head h2 { margin: 0; font-size: 1em; font-weight: 600; }
+    .scan-head .scan-meta { font-size: .87em; color: var(--muted); margin-left: 10px; }
+
+    .item { border-bottom: 1px solid var(--border); }
+    .item:last-child { border-bottom: 0; }
+    .item.is-open { background: var(--surface-2); }
+    .item-toggle {
+      width: 100%; display: flex; gap: 12px; align-items: flex-start;
+      padding: 12px 16px; min-height: 44px; border: 0; background: transparent; text-align: left; cursor: pointer;
+    }
+    .dot { flex: 0 0 8px; height: 8px; margin-top: .45em; border-radius: 50%; background: var(--accent); }
+    .item.is-read .dot { background: transparent; }
+    .item-head { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .8em; color: var(--muted); }
+    .chip { padding: 2px 8px; border-radius: 6px; background: var(--surface-2); color: var(--fg-soft); }
+    .item.is-open .chip { background: var(--surface); }
+    .pauta-tag { color: var(--pauta); font-weight: 600; }
+    .item-title { font-size: 1em; line-height: 1.4; font-weight: 500; color: var(--fg); }
+    .item.is-read .item-title { font-weight: 400; color: var(--muted); }
+    .item-body { padding: 0 16px 16px 36px; display: flex; flex-direction: column; gap: 12px; }
+    .item-summary { margin: 0; font-size: .93em; line-height: 1.6; color: var(--fg-soft); white-space: pre-line; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .act-pauta.is-on { border-color: var(--pauta); color: var(--pauta); background: var(--pauta-soft); }
+
+    .empty { padding: 48px 24px; text-align: center; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); }
+    .empty strong { display: block; font-size: 1.13em; color: var(--fg); margin-bottom: 6px; }
+
+    aside.pauta {
+      flex: 1 1 260px; max-width: 100%; position: sticky; top: 150px;
+      border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+      padding: 16px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .pauta-head { display: flex; align-items: baseline; justify-content: space-between; }
+    .pauta-head h2 { margin: 0; font-size: 1em; }
+    .pauta-head .mono { font-size: .8em; color: var(--muted); }
+    .pauta-hint { margin: 0; font-size: .87em; line-height: 1.5; color: var(--muted); }
+    .pauta-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .pauta-list li { display: flex; gap: 8px; align-items: flex-start; padding: 10px 8px 10px 12px; border-radius: 8px; background: var(--surface-2); }
+    .pauta-list .num { font-size: .8em; color: var(--pauta); padding-top: 2px; }
+    .pauta-list .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .pauta-list .src { font-size: .8em; color: var(--muted); }
+    .pauta-list .ttl { font-size: .93em; line-height: 1.4; }
+    .pauta-list .rm { flex: 0 0 32px; height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+    .pauta-list .rm:hover { background: var(--surface); color: var(--fg); }
+    .pauta-send { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .send-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .send-grid .btn { width: 100%; }
+    .pauta-feedback { margin: 0; font-size: .85em; color: var(--accent); min-height: 1.2em; }
+    .pauta-preview {
+      margin: 0; padding: 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border);
+      font-size: .8em; line-height: 1.6; color: var(--fg-soft); white-space: pre-wrap; max-height: 260px; overflow: auto;
+    }
+    .link-quiet { align-self: flex-start; border: 0; background: none; padding: 0; color: var(--muted); font-size: .85em; cursor: pointer; text-decoration: underline; }
+
+    @media (max-width: 700px) {
+      .wrap { padding: 0 16px; }
+      header.top { position: static; }
+      .new-pill { top: 12px; }
+      aside.pauta { position: static; }
+      .item-body { padding-left: 16px; }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Dr. Occam <a href="/search">buscar 🔎</a> <a href="/admin">gerenciar fontes →</a></h1>
-    <div class="toolbar">
-      <button id="font-decrease" type="button" aria-label="Diminuir fonte" title="Diminuir fonte">A−</button>
-      <button id="font-increase" type="button" aria-label="Aumentar fonte" title="Aumentar fonte">A+</button>
-      <button id="theme-toggle" type="button" aria-label="Alternar tema claro/escuro" title="Alternar tema">🌙</button>
+  <header class="top">
+    <div class="wrap top-row">
+      <div class="brand">
+        <h1>Dr. Occam</h1>
+        <span class="mono">{{ today_label }}</span>
+      </div>
+      <form class="search" action="/search" method="get" role="search">
+        <label for="home-search" class="visually-hidden">Buscar notícias</label>
+        <input id="home-search" name="q" type="search" placeholder="Buscar: o que saiu sobre eleições em Israel nesta semana">
+      </form>
+      <span id="scan-pill" class="scan-pill" role="status">Verificando varredura…</span>
+      <a class="btn" href="/admin">Gerenciar fontes</a>
+      <div class="toolbar">
+        <button class="btn" id="font-decrease" type="button" aria-label="Diminuir fonte" title="Diminuir fonte">A−</button>
+        <button class="btn" id="font-increase" type="button" aria-label="Aumentar fonte" title="Aumentar fonte">A+</button>
+        <button class="btn" id="theme-toggle" type="button" aria-label="Alternar tema claro/escuro" title="Alternar tema">🌙</button>
+      </div>
+    </div>
+    <div class="wrap progress-row">
+      <div class="progress">
+        <div class="progress-text">
+          <span><b id="unread-count">0 a ler</b> · <span id="read-summary"></span></span>
+          <span class="mono" id="read-pct">0%</span>
+        </div>
+        <div class="bar" aria-hidden="true"><span id="read-bar"></span></div>
+      </div>
+      <div class="filters">
+        <button class="btn" id="only-unread-btn" type="button" aria-pressed="false">Só não lidas</button>
+        <button class="btn" id="mark-visible-btn" type="button">Marcar tudo como lido</button>
+      </div>
     </div>
   </header>
 
-  {% if cards %}
-    {% for card in cards %}
-    <article class="card" data-created-at="{{ card.created_at_iso }}">
-      <h2><a href="{{ card.url }}" target="_blank" rel="noopener noreferrer">{{ card.title }}</a></h2>
-      <div class="meta">
-        <time>{{ card.date }}</time>
-      </div>
-      <p>{{ card.summary }}</p>
-      <div class="share-row">
-        <a href="{{ card.whatsapp_url }}" target="_blank" rel="noopener noreferrer">Compartilhar no WhatsApp</a>
-        <a href="{{ card.telegram_url }}" target="_blank" rel="noopener noreferrer">Compartilhar no Telegram</a>
-      </div>
-    </article>
-    {% endfor %}
-  {% else %}
-    <p>Nenhum artigo processado ainda.</p>
-  {% endif %}
+  <div class="wrap layout">
+    <nav class="sources" aria-label="Fontes">
+      <div class="section-label">Fontes</div>
+      <button class="source-btn" type="button" data-filter="" aria-pressed="true"><span class="name">Todas as fontes</span><span class="count mono"></span></button>
+      {% for name in sources %}
+      <button class="source-btn" type="button" data-filter="{{ name }}" aria-pressed="false"><span class="name">{{ name }}</span><span class="count mono"></span></button>
+      {% endfor %}
+    </nav>
 
+    <main class="feed">
+      <button id="new-pill" class="new-pill" type="button" hidden></button>
+
+      {% for group in groups %}
+      <section class="scan">
+        <div class="scan-head">
+          <div><h2 style="display: inline">{{ group.label }}</h2><span class="scan-meta"></span></div>
+          <button class="btn btn-small scan-mark" type="button">Marcar varredura como lida</button>
+        </div>
+        <div class="scan-items">
+          {% for item in group["items"] %}
+          <article class="item{% if item.is_read %} is-read{% endif %}" data-id="{{ item.id }}" data-source="{{ item.source }}" data-url="{{ item.url }}">
+            <button class="item-toggle" type="button" aria-expanded="false" aria-controls="body-{{ item.id }}">
+              <span class="dot" aria-hidden="true"></span>
+              <span class="item-head">
+                <span class="item-meta">
+                  <span class="chip">{{ item.source }}</span>
+                  <time class="mono">{{ item.time }}</time>
+                  <span class="pauta-tag"{% if not item.in_pauta %} hidden{% endif %}>Na pauta</span>
+                </span>
+                <span class="item-title">{{ item.title }}</span>
+              </span>
+            </button>
+            <div class="item-body" id="body-{{ item.id }}" hidden>
+              <p class="item-summary">{{ item.summary }}</p>
+              <div class="actions">
+                <button class="btn btn-small act-pauta{% if item.in_pauta %} is-on{% endif %}" type="button">{% if item.in_pauta %}Remover da pauta{% else %}Adicionar à pauta{% endif %}</button>
+                <a class="btn btn-small" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">Abrir matéria original</a>
+                <button class="btn btn-small act-whatsapp" type="button">WhatsApp</button>
+                <button class="btn btn-small act-telegram" type="button">Telegram</button>
+                <button class="btn btn-small act-unread" type="button">Marcar como não lida</button>
+              </div>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+
+      <div id="empty-state" class="empty" hidden>
+        <strong>Tudo em dia</strong>
+        {% if groups %}Nenhuma notícia sem ler neste filtro. As próximas aparecem aqui na próxima varredura.{% else %}Nenhuma notícia processada nas últimas {{ window_hours }} horas. As mais antigas continuam na <a href="/search">busca</a>.{% endif %}
+      </div>
+    </main>
+
+    <aside class="pauta" aria-label="Pauta">
+      <div class="pauta-head">
+        <h2>Pauta</h2>
+        <span class="mono" id="pauta-count">0</span>
+      </div>
+      <p class="pauta-hint" id="pauta-hint">Abra uma notícia e use “Adicionar à pauta” para separar os temas do dia.</p>
+      <ol class="pauta-list" id="pauta-list"></ol>
+      <div class="pauta-send" id="pauta-send" hidden>
+        <div class="section-label" style="padding: 0">Enviar pauta</div>
+        <div class="send-grid">
+          <button class="btn" type="button" id="pauta-telegram">Telegram</button>
+          <button class="btn" type="button" id="pauta-whatsapp">WhatsApp</button>
+          <button class="btn" type="button" id="pauta-copy">Copiar texto</button>
+          <a class="btn" href="/pauta/imprimir" target="_blank" rel="noopener">Baixar PDF</a>
+        </div>
+        <p class="pauta-feedback" id="pauta-feedback" role="status"></p>
+        <div class="section-label" style="padding: 0">Prévia do texto</div>
+        <pre class="pauta-preview mono" id="pauta-preview"></pre>
+        <button class="link-quiet" type="button" id="pauta-clear">Esvaziar pauta</button>
+      </div>
+    </aside>
+  </div>
+
+  <script type="application/json" id="pauta-data">{{ pauta | tojson }}</script>
   <script>
+    // --- Tema e tamanho de fonte (preferências deste navegador) ---
     (function () {
       var root = document.documentElement;
       var THEME_KEY = 'occam-theme';
@@ -170,11 +338,9 @@
       function systemPrefersDark() {
         return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       }
-
       function isDark(theme) {
         return theme === 'dark' || (theme !== 'light' && systemPrefersDark());
       }
-
       function applyTheme(theme) {
         if (theme === 'dark' || theme === 'light') {
           root.dataset.theme = theme;
@@ -183,24 +349,19 @@
         }
         themeBtn.textContent = isDark(theme) ? '☀️' : '🌙';
       }
-
       applyTheme(localStorage.getItem(THEME_KEY));
-
       themeBtn.addEventListener('click', function () {
         var current = root.dataset.theme || (systemPrefersDark() ? 'dark' : 'light');
         var next = current === 'dark' ? 'light' : 'dark';
         localStorage.setItem(THEME_KEY, next);
         applyTheme(next);
       });
-
       function applyFontScale(scale) {
         scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.round(scale * 100) / 100));
         root.style.setProperty('--font-scale', scale);
         localStorage.setItem(FONT_KEY, String(scale));
       }
-
       applyFontScale(parseFloat(localStorage.getItem(FONT_KEY)) || 1);
-
       incBtn.addEventListener('click', function () {
         var current = parseFloat(getComputedStyle(root).getPropertyValue('--font-scale')) || 1;
         applyFontScale(current + 0.1);
@@ -211,48 +372,337 @@
       });
     })();
 
-    // Destaque "Novo": compara a data de cada card com a última vez que
-    // esta página foi carregada NESTE navegador (localStorage, sem sessão
-    // no servidor — mesmo padrão do tema/tamanho de fonte acima). Só o que
-    // chegou depois da última visita fica marcado, então rodar o pipeline
-    // várias vezes no mesmo dia não deixa tudo "novo" de novo — só o que
-    // realmente é incremental desde a última checada.
+    // --- Caixa de entrada: lido/não lido, filtros, pauta e aviso de novas ---
+    // O estado de leitura e a pauta ficam no banco (APIs em home/router.py);
+    // a página aplica cada mudança na hora e só desfaz se a chamada falhar.
+    // Filtros (fonte, "só não lidas") são locais: só escondem/mostram linhas.
     (function () {
-      var LAST_SEEN_KEY = 'occam-last-seen';
-      // Grava a marca de "visto" só depois de MARK_SEEN_DELAY_MS na página
-      // (em vez de na hora do load) — uma passagem rápida por aqui (ex.:
-      // indo pro /admin e voltando) não deve "gastar" o destaque antes de
-      // ele ter sido realmente visto; navegar embora antes do timer cancela
-      // a gravação, então o destaque continua lá na próxima visita.
-      var MARK_SEEN_DELAY_MS = 4000;
+      var WINDOW_START = {{ window_start_iso | tojson }};
+      var TODAY_LABEL = {{ today_label | tojson }};
+      var ONLY_UNREAD_KEY = 'occam-only-unread';
+      var POLL_MS = 20000;
 
-      var cards = Array.prototype.slice.call(document.querySelectorAll('.card[data-created-at]'));
-      if (!cards.length) return;
+      var items = Array.prototype.slice.call(document.querySelectorAll('.item'));
+      var scans = Array.prototype.slice.call(document.querySelectorAll('.scan'));
+      var sourceBtns = Array.prototype.slice.call(document.querySelectorAll('.source-btn'));
+      var onlyUnreadBtn = document.getElementById('only-unread-btn');
+      var markVisibleBtn = document.getElementById('mark-visible-btn');
+      var emptyState = document.getElementById('empty-state');
+      var itemById = {};
+      items.forEach(function (el) { itemById[el.dataset.id] = el; });
 
-      var storedRaw = localStorage.getItem(LAST_SEEN_KEY);
-      var lastSeen = storedRaw ? new Date(storedRaw) : null;
-      var maxSeen = lastSeen || new Date(0);
+      var filterSource = '';
+      var onlyUnread = false;
+      try { onlyUnread = localStorage.getItem(ONLY_UNREAD_KEY) === '1'; } catch (e) {}
 
-      cards.forEach(function (card) {
-        var createdAt = new Date(card.dataset.createdAt);
-        if (isNaN(createdAt.getTime())) return;
-        if (createdAt > maxSeen) maxSeen = createdAt;
+      function isRead(el) { return el.classList.contains('is-read'); }
+      function isOpen(el) { return el.classList.contains('is-open'); }
+      function idOf(el) { return Number(el.dataset.id); }
+      function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 
-        // Sem 'lastSeen' = primeira visita neste navegador: não há
-        // referência pra comparar, então não marca nada como novo agora —
-        // só estabelece o marco pra próxima visita.
-        if (lastSeen && createdAt > lastSeen) {
-          card.classList.add('is-new');
-          var badge = document.createElement('span');
-          badge.className = 'badge-new';
-          badge.textContent = 'Novo';
-          card.querySelector('.meta').appendChild(badge);
-        }
+      function isVisible(el) {
+        if (filterSource && el.dataset.source !== filterSource) return false;
+        // Uma notícia aberta continua na tela mesmo depois de lida, senão
+        // ela sumiria no meio da leitura com "só não lidas" ligado.
+        if (onlyUnread && isRead(el) && !isOpen(el)) return false;
+        return true;
+      }
+
+      function render() {
+        var total = items.length;
+        var readCount = items.filter(isRead).length;
+        var pct = total ? Math.round(readCount / total * 100) : 0;
+        document.getElementById('unread-count').textContent = (total - readCount) + ' a ler';
+        document.getElementById('read-summary').textContent =
+          readCount + ' de ' + plural(total, 'notícia vista', 'notícias vistas') + ' nas últimas {{ window_hours }}h';
+        document.getElementById('read-pct').textContent = pct + '%';
+        document.getElementById('read-bar').style.width = pct + '%';
+
+        var anyVisible = false;
+        scans.forEach(function (scan) {
+          var scanItems = Array.prototype.slice.call(scan.querySelectorAll('.item'));
+          var visible = scanItems.filter(isVisible);
+          scanItems.forEach(function (el) { el.hidden = visible.indexOf(el) < 0; });
+          scan.hidden = visible.length === 0;
+          if (visible.length) anyVisible = true;
+          var unread = visible.filter(function (el) { return !isRead(el); }).length;
+          scan.querySelector('.scan-meta').textContent =
+            plural(visible.length, 'notícia', 'notícias') + ' · ' + unread + ' a ler';
+          var markBtn = scan.querySelector('.scan-mark');
+          // Com uma fonte filtrada, o botão vale só para as notícias dela
+          // nesta varredura — o rótulo deixa isso explícito.
+          markBtn.textContent = filterSource
+            ? 'Marcar estas ' + visible.length + ' como lidas'
+            : 'Marcar varredura como lida';
+          markBtn.disabled = unread === 0;
+        });
+        emptyState.hidden = anyVisible;
+
+        var visibleUnread = items.filter(function (el) { return isVisible(el) && !isRead(el); }).length;
+        markVisibleBtn.textContent = filterSource
+          ? 'Marcar estas ' + visibleUnread + ' como lidas'
+          : 'Marcar tudo como lido';
+        markVisibleBtn.disabled = visibleUnread === 0;
+        onlyUnreadBtn.setAttribute('aria-pressed', onlyUnread ? 'true' : 'false');
+
+        sourceBtns.forEach(function (btn) {
+          var name = btn.dataset.filter;
+          var unreadInSource = items.filter(function (el) {
+            return (!name || el.dataset.source === name) && !isRead(el);
+          }).length;
+          btn.querySelector('.count').textContent = unreadInSource;
+          btn.classList.toggle('is-done', unreadInSource === 0);
+          btn.setAttribute('aria-pressed', name === filterSource ? 'true' : 'false');
+        });
+      }
+
+      function postJSON(method, url, body) {
+        return fetch(url, {
+          method: method,
+          headers: body ? { 'Content-Type': 'application/json' } : {},
+          body: body ? JSON.stringify(body) : undefined
+        }).then(function (res) {
+          if (!res.ok) throw new Error('Erro ' + res.status);
+          return res.json();
+        });
+      }
+
+      function setRead(els, read) {
+        var changed = els.filter(function (el) { return isRead(el) !== read; });
+        if (!changed.length) return;
+        changed.forEach(function (el) { el.classList.toggle('is-read', read); });
+        render();
+        postJSON('POST', '/api/articles/read', { ids: changed.map(idOf), read: read }).catch(function (err) {
+          changed.forEach(function (el) { el.classList.toggle('is-read', !read); });
+          render();
+          alert('Não foi possível salvar a leitura: ' + err.message);
+        });
+      }
+
+      function setOpen(el, open) {
+        el.classList.toggle('is-open', open);
+        el.querySelector('.item-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+        el.querySelector('.item-body').hidden = !open;
+      }
+
+      items.forEach(function (el) {
+        el.querySelector('.item-toggle').addEventListener('click', function () {
+          var open = !isOpen(el);
+          setOpen(el, open);
+          if (open) setRead([el], true); else render();
+        });
+        el.querySelector('.act-unread').addEventListener('click', function () {
+          setOpen(el, false);
+          setRead([el], false);
+        });
+        el.querySelector('.act-pauta').addEventListener('click', function () {
+          togglePauta(el);
+        });
+        // Links de compartilhamento montados só no clique (mesmo formato de
+        // article_format.py): gerados no HTML, o resumo codificado em duas
+        // URLs por notícia multiplicava o tamanho da página.
+        el.querySelector('.act-whatsapp').addEventListener('click', function () {
+          var title = el.querySelector('.item-title').textContent;
+          var summary = el.querySelector('.item-summary').textContent;
+          window.open('https://wa.me/?text=' + encodeURIComponent(title + '\n\n' + summary + '\n\n' + el.dataset.url), '_blank', 'noopener');
+        });
+        el.querySelector('.act-telegram').addEventListener('click', function () {
+          var title = el.querySelector('.item-title').textContent;
+          var summary = el.querySelector('.item-summary').textContent;
+          window.open('https://t.me/share/url?url=' + encodeURIComponent(el.dataset.url) + '&text=' + encodeURIComponent(title + '\n\n' + summary), '_blank', 'noopener');
+        });
       });
 
-      setTimeout(function () {
-        localStorage.setItem(LAST_SEEN_KEY, maxSeen.toISOString());
-      }, MARK_SEEN_DELAY_MS);
+      scans.forEach(function (scan) {
+        scan.querySelector('.scan-mark').addEventListener('click', function () {
+          var visible = Array.prototype.slice.call(scan.querySelectorAll('.item')).filter(isVisible);
+          setRead(visible, true);
+        });
+      });
+
+      markVisibleBtn.addEventListener('click', function () {
+        setRead(items.filter(isVisible), true);
+      });
+
+      onlyUnreadBtn.addEventListener('click', function () {
+        onlyUnread = !onlyUnread;
+        try { localStorage.setItem(ONLY_UNREAD_KEY, onlyUnread ? '1' : '0'); } catch (e) {}
+        render();
+      });
+
+      sourceBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          filterSource = btn.dataset.filter;
+          render();
+        });
+      });
+
+      // --- Pauta ---
+      var pauta = JSON.parse(document.getElementById('pauta-data').textContent);
+      var pautaList = document.getElementById('pauta-list');
+      var pautaFeedback = document.getElementById('pauta-feedback');
+
+      function pautaText(withSummaries) {
+        var lines = ['Pauta — ' + TODAY_LABEL, plural(pauta.length, 'tema', 'temas'), ''];
+        pauta.forEach(function (p, i) {
+          lines.push((i + 1) + '. ' + p.title);
+          if (withSummaries && p.summary) lines.push('   ' + p.summary);
+          lines.push('   ' + p.source + ' · ' + p.url);
+          lines.push('');
+        });
+        return lines.join('\n').trim();
+      }
+
+      function renderPauta() {
+        document.getElementById('pauta-count').textContent = pauta.length;
+        document.getElementById('pauta-hint').hidden = pauta.length > 0;
+        document.getElementById('pauta-send').hidden = pauta.length === 0;
+        pautaList.textContent = '';
+        pauta.forEach(function (p, i) {
+          var li = document.createElement('li');
+          var num = document.createElement('span');
+          num.className = 'num mono';
+          num.textContent = String(i + 1).padStart(2, '0');
+          var txt = document.createElement('span');
+          txt.className = 'txt';
+          var src = document.createElement('span');
+          src.className = 'src';
+          src.textContent = p.source;
+          var ttl = document.createElement('a');
+          ttl.className = 'ttl';
+          ttl.href = p.url;
+          ttl.target = '_blank';
+          ttl.rel = 'noopener noreferrer';
+          ttl.textContent = p.title;
+          txt.appendChild(src);
+          txt.appendChild(ttl);
+          var rm = document.createElement('button');
+          rm.className = 'rm';
+          rm.type = 'button';
+          rm.setAttribute('aria-label', 'Remover da pauta: ' + p.title);
+          rm.textContent = '✕';
+          rm.addEventListener('click', function () { removeFromPauta(p.id); });
+          li.appendChild(num);
+          li.appendChild(txt);
+          li.appendChild(rm);
+          pautaList.appendChild(li);
+        });
+        document.getElementById('pauta-preview').textContent = pautaText(false);
+        items.forEach(function (el) {
+          var on = pauta.some(function (p) { return String(p.id) === el.dataset.id; });
+          var btn = el.querySelector('.act-pauta');
+          btn.classList.toggle('is-on', on);
+          btn.textContent = on ? 'Remover da pauta' : 'Adicionar à pauta';
+          el.querySelector('.pauta-tag').hidden = !on;
+        });
+      }
+
+      function savePauta(id, inPauta, previous) {
+        renderPauta();
+        postJSON('PUT', '/api/articles/' + id + '/pauta', { in_pauta: inPauta }).catch(function (err) {
+          pauta = previous;
+          renderPauta();
+          alert('Não foi possível atualizar a pauta: ' + err.message);
+        });
+      }
+
+      function removeFromPauta(id) {
+        var previous = pauta.slice();
+        pauta = pauta.filter(function (p) { return p.id !== id; });
+        savePauta(id, false, previous);
+      }
+
+      function togglePauta(el) {
+        var id = idOf(el);
+        if (pauta.some(function (p) { return p.id === id; })) {
+          removeFromPauta(id);
+          return;
+        }
+        var previous = pauta.slice();
+        pauta = pauta.concat([{
+          id: id,
+          title: el.querySelector('.item-title').textContent,
+          summary: el.querySelector('.item-summary').textContent,
+          url: el.dataset.url,
+          source: el.dataset.source
+        }]);
+        savePauta(id, true, previous);
+      }
+
+      function sayPauta(msg) {
+        pautaFeedback.textContent = msg;
+        setTimeout(function () { if (pautaFeedback.textContent === msg) pautaFeedback.textContent = ''; }, 4000);
+      }
+
+      document.getElementById('pauta-telegram').addEventListener('click', function () {
+        // O texto vai no parâmetro "url": o Telegram usa o valor dele como
+        // corpo da mensagem quando não é um link isolado.
+        window.open('https://t.me/share/url?url=' + encodeURIComponent(pautaText(false)), '_blank', 'noopener');
+      });
+      document.getElementById('pauta-whatsapp').addEventListener('click', function () {
+        window.open('https://wa.me/?text=' + encodeURIComponent(pautaText(false)), '_blank', 'noopener');
+      });
+      document.getElementById('pauta-copy').addEventListener('click', function () {
+        var text = pautaText(true);
+        // navigator.clipboard só existe em HTTPS/localhost; acessando pelo
+        // IP da rede local (http://), cai no método antigo via <textarea>.
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(function () {
+            sayPauta('Texto da pauta copiado, com os resumos.');
+          }, function () { sayPauta('Não foi possível copiar.'); });
+          return;
+        }
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+        sayPauta(ok ? 'Texto da pauta copiado, com os resumos.' : 'Não foi possível copiar.');
+      });
+      document.getElementById('pauta-clear').addEventListener('click', function () {
+        if (!confirm('Tirar todas as notícias da pauta?')) return;
+        var previous = pauta.slice();
+        pauta = [];
+        renderPauta();
+        postJSON('DELETE', '/api/pauta').catch(function (err) {
+          pauta = previous;
+          renderPauta();
+          alert('Não foi possível esvaziar a pauta: ' + err.message);
+        });
+      });
+
+      // --- Situação da varredura e aviso de notícias novas ---
+      // A lista nunca se reorganiza sozinha: notícias que ficam prontas
+      // depois que a página abriu viram um botão "N novas — mostrar".
+      var scanPill = document.getElementById('scan-pill');
+      var newPill = document.getElementById('new-pill');
+      var latestTime = items.length ? items[0].querySelector('time').textContent : null;
+
+      function pollStatus() {
+        fetch('/api/home/status?since=' + encodeURIComponent(WINDOW_START))
+          .then(function (res) { if (!res.ok) throw new Error(); return res.json(); })
+          .then(function (data) {
+            scanPill.classList.toggle('is-running', data.pipeline_running);
+            scanPill.textContent = data.pipeline_running
+              ? 'Varredura em andamento'
+              : (latestTime ? 'Última notícia às ' + latestTime : 'Nenhuma varredura em andamento');
+            var fresh = data.processed_since - items.length;
+            newPill.hidden = fresh <= 0;
+            if (fresh > 0) newPill.textContent = plural(fresh, 'notícia nova', 'notícias novas') + ' — mostrar';
+          })
+          .catch(function () { scanPill.textContent = 'Sem conexão com o servidor'; });
+      }
+      newPill.addEventListener('click', function () { location.reload(); });
+
+      render();
+      renderPauta();
+      pollStatus();
+      setInterval(pollStatus, POLL_MS);
     })();
   </script>
 </body>

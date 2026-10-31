@@ -86,8 +86,36 @@ def _migrate_article_source_id_nullable() -> None:
         logger.info("Migração de 'article' concluída")
 
 
+# Colunas acrescentadas a 'article' depois da criação original: create_all
+# não altera tabelas existentes, então cada uma entra via ALTER TABLE ADD
+# COLUMN (suportado pelo SQLite para colunas nullable sem default).
+_ARTICLE_ADDED_COLUMNS: dict[str, str] = {
+    "read_at": "DATETIME",
+    "in_pauta_at": "DATETIME",
+}
+
+
+def _migrate_article_added_columns() -> None:
+    with engine.begin() as conn:
+        columns_info = conn.exec_driver_sql("PRAGMA table_info(article)").fetchall()
+        if not columns_info:
+            return  # instalação nova — create_all cria já com as colunas
+
+        existing = {c[1] for c in columns_info}
+        for name, sql_type in _ARTICLE_ADDED_COLUMNS.items():
+            if name not in existing:
+                logger.info("Migrando tabela 'article': adicionando coluna '%s'", name)
+                conn.exec_driver_sql(f"ALTER TABLE article ADD COLUMN {name} {sql_type}")
+
+        if "in_pauta_at" not in existing:
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_article_in_pauta_at ON article (in_pauta_at)"
+            )
+
+
 def create_db_and_tables() -> None:
     _migrate_article_source_id_nullable()
+    _migrate_article_added_columns()
     SQLModel.metadata.create_all(engine)
     ensure_vec_table(engine)
 

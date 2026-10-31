@@ -9,10 +9,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from typing import Any, AsyncIterator
-from urllib.parse import quote
 from xml.sax.saxutils import escape
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete as sa_delete
@@ -21,6 +21,7 @@ from sqlmodel import Field, Session, SQLModel, select
 
 import pipeline_state
 import scheduler as scheduler_service
+from article_format import format_summary
 from database import create_db_and_tables, engine
 from embeddings.backfill import run_embedding_backfill
 from llm_processor import run_llm_processing
@@ -33,9 +34,9 @@ from models import (
     Source,
     SourceType,
 )
+from home.router import router as home_router
 from pipeline import run_pipeline
 from search.router import router as search_router
-from timezone_utils import DISPLAY_TIMEZONE
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -56,12 +57,7 @@ _buffer_handler = _BufferLogHandler()
 _buffer_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 logging.getLogger().addHandler(_buffer_handler)
 
-TRUNCATION_WARNING = (
-    "[Aviso: O texto original era demasiadamente longo e foi truncado "
-    "para proteção de contexto da IA]"
-)
 FEED_LIMIT = 100
-HOMEPAGE_LIMIT = 50
 
 
 @asynccontextmanager
@@ -80,6 +76,10 @@ TAGS_METADATA = [
     {
         "name": "Feed",
         "description": "Conteúdo público consumido por leitores humanos (feed RSS e página inicial).",
+    },
+    {
+        "name": "Tela inicial",
+        "description": "Estado de leitura e pauta da tela inicial, e a impressão da pauta.",
     },
     {
         "name": "Busca",
@@ -120,7 +120,11 @@ app = FastAPI(
     lifespan=lifespan,
     openapi_tags=TAGS_METADATA,
 )
+# A tela inicial traz todos os resumos da janela (centenas de artigos) num
+# único HTML; texto comprime bem, então o gzip corta boa parte do tráfego.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 templates = Jinja2Templates(directory="templates")
+app.include_router(home_router)
 app.include_router(search_router)
 
 
@@ -187,34 +191,10 @@ def _validate_schedule_times(times: list[str]) -> list[str]:
     return sorted(times)
 
 
-def _format_summary(article: Article) -> str:
-    summary = article.ai_summary or ""
-    if article.is_truncated:
-        summary = f"{summary}\n\n{TRUNCATION_WARNING}"
-    return summary
-
-
 def _rfc822(dt: datetime) -> str:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return format_datetime(dt)
-
-
-def _to_display_timezone(dt: datetime) -> datetime:
-    """Converte um datetime armazenado em UTC (naive ou aware) para exibição em -03:00."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(DISPLAY_TIMEZONE)
-
-
-def _whatsapp_share_url(title: str, summary: str, url: str) -> str:
-    text = f"{title}\n\n{summary}\n\n{url}"
-    return f"https://wa.me/?text={quote(text)}"
-
-
-def _telegram_share_url(title: str, summary: str, url: str) -> str:
-    text = f"{title}\n\n{summary}"
-    return f"https://t.me/share/url?url={quote(url)}&text={quote(text)}"
 
 
 @app.post(
@@ -383,7 +363,7 @@ def get_feed() -> Response:
             f"<link>{escape(article.original_url)}</link>"
             f'<guid isPermaLink="false">{article.id}</guid>'
             f"<pubDate>{_rfc822(article.created_at)}</pubDate>"
-            f"<description>{escape(_format_summary(article))}</description>"
+            f"<description>{escape(format_summary(article))}</description>"
             "</item>"
             for article in articles
         )
@@ -400,55 +380,6 @@ def get_feed() -> Response:
         "</channel></rss>"
     )
     return Response(content=xml, media_type="application/rss+xml")
-
-
-@app.get(
-    "/",
-    response_class=HTMLResponse,
-    tags=["Feed"],
-    summary="Página inicial com o feed de notícias",
-    description=(
-        f"Renderiza a página web pública com os {HOMEPAGE_LIMIT} artigos mais recentes já "
-        "processados pela IA (status `PROCESSED`), com título e resumo neutros, data de "
-        "publicação convertida para o fuso de São Paulo, e links de compartilhamento para "
-        "WhatsApp e Telegram."
-    ),
-    response_description="Página HTML do feed de notícias.",
-)
-def homepage(request: Request) -> Response:
-    with Session(engine) as session:
-        articles = session.exec(
-            select(Article)
-            .where(Article.status == ArticleStatus.PROCESSED)
-            .order_by(Article.created_at.desc())
-            .limit(HOMEPAGE_LIMIT)
-        ).all()
-
-        cards: list[dict[str, Any]] = []
-        for article in articles:
-            title = article.ai_title or "(sem título)"
-            summary = _format_summary(article)
-            created_at = article.created_at
-            if created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=timezone.utc)
-            cards.append(
-                {
-                    "title": title,
-                    "url": article.original_url,
-                    "date": _to_display_timezone(article.created_at).strftime("%d/%m/%Y %H:%M"),
-                    # ISO 8601 em UTC — consumido pelo JS do template para decidir,
-                    # no navegador, quais cards chegaram depois da última visita
-                    # (ver comentário de "occam-last-seen" em index.html).
-                    "created_at_iso": created_at.isoformat(),
-                    "summary": summary,
-                    "whatsapp_url": _whatsapp_share_url(title, summary, article.original_url),
-                    "telegram_url": _telegram_share_url(title, summary, article.original_url),
-                }
-            )
-
-    return templates.TemplateResponse(
-        request=request, name="index.html", context={"cards": cards}
-    )
 
 
 def _compute_admin_stats(session: Session, sources: list[Source]) -> dict[str, Any]:

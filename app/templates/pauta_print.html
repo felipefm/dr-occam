@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pauta — Dr. Occam</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0 auto;
+      max-width: 760px;
+      padding: 32px 24px 48px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 12pt;
+      line-height: 1.5;
+      color: #16181b;
+      background: #ffffff;
+    }
+    header { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; border-bottom: 2px solid #16181b; padding-bottom: 8px; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 20pt; }
+    .meta { font-family: system-ui, sans-serif; font-size: 9.5pt; color: #555b62; }
+    ol { margin: 0; padding-left: 1.4em; }
+    li { margin-bottom: 18px; break-inside: avoid; }
+    h2 { margin: 0 0 4px; font-size: 13pt; }
+    p { margin: 0 0 6px; white-space: pre-line; }
+    .source { font-family: system-ui, sans-serif; font-size: 9.5pt; color: #555b62; }
+    a { color: #0b57d0; word-break: break-all; }
+    .print-btn {
+      font: 600 11pt system-ui, sans-serif; min-height: 44px; padding: 0 18px; margin-bottom: 24px;
+      border-radius: 8px; border: 1px solid #0d8a69; background: #0d8a69; color: #fff; cursor: pointer;
+    }
+    @media print {
+      body { padding: 0; }
+      .print-btn { display: none; }
+      a { color: #16181b; }
+    }
+  </style>
+</head>
+<body>
+  <button class="print-btn" type="button" onclick="window.print()">Imprimir ou salvar como PDF</button>
+  <header>
+    <h1>Pauta</h1>
+    <span class="meta">Dr. Occam · gerada em {{ generated_at }}</span>
+  </header>
+  {% if items %}
+  <ol>
+    {% for item in items %}
+    <li>
+      <h2>{{ item.title }}</h2>
+      <p>{{ item.summary }}</p>
+      <div class="source">{{ item.source }} · {{ item.date }}</div>
+      <a href="{{ item.url }}">{{ item.url }}</a>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p>A pauta está vazia. Adicione notícias pela tela inicial.</p>
+  {% endif %}
+</body>
+</html>

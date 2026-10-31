@@ -73,6 +73,12 @@ class Article(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=_utcnow, nullable=False, index=True
     )
+    # Estado de leitura da tela inicial ("caixa de entrada"): NULL = não lida.
+    # Fica no banco, e não no navegador, para celular e computador verem o
+    # mesmo estado (ver home/).
+    read_at: datetime | None = Field(default=None, nullable=True)
+    # NULL = fora da pauta; o instante em que entrou ordena a lista da pauta.
+    in_pauta_at: datetime | None = Field(default=None, nullable=True, index=True)
 
     source: Source | None = Relationship(back_populates="articles")
     processing_logs: list["LLMProcessingLog"] = Relationship(back_populates="article")
