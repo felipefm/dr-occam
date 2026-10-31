@@ -1,58 +1,98 @@
-version: '3.8'
-
+name: projeto-occam
 services:
-  # 1. Dr. Occam (Nosso Sistema Central em FastAPI)
-  # A extração de conteúdo roda in-process via trafilatura, sem depender de
-  # um microsserviço externo de scraping/renderização (ex.: Browserless).
-  # O segundo container abaixo (rsshub) é só um gerador de feeds RSS
-  # auxiliar, não um microsserviço de scraping do Dr. Occam.
-  api-occam:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
-    container_name: dr_occam_api
-    ports:
-      - "8383:8000" # Porta para acessar a interface e o feed RSS
-    volumes:
-      - ./app:/app  # Mapeamento do código para hot-reload
-      - ./app/data:/app/data # Persistência do banco de dados SQLite
-    env_file:
-      - .env
-    environment:
-      - TZ=America/Sao_Paulo
-    # Teto de memória/CPU: sem isso, um pico de uso (ex.: várias extrações de
-    # página concorrentes) não tem limite nenhum dentro do container e pode
-    # consumir toda a RAM do host — como o host não tem swap configurado,
-    # isso aciona o OOM killer contra o sistema inteiro, derrubando outros
-    # containers sem relação nenhuma com o Dr. Occam (ex.: Plex, Datasette).
-    # Usa mem_limit/cpus (não deploy.resources.limits) porque este projeto
-    # roda com `docker compose up` fora do modo swarm — deploy.resources só
-    # é respeitado em `docker stack deploy`.
-    mem_limit: 2g
-    cpus: 2.0
-    networks:
-      - occam_network
-
-  # 2. RSSHub (Gerador de feeds RSS para sites que não possuem nativamente)
-  # Usado como fonte alternativa: sites sem RSS passam a ser cadastrados no
-  # Dr. Occam como uma fonte RSS normal, apontando para a rota gerada aqui
-  # (ex.: http://rsshub:1200/algumSite), sem exigir raspagem de HTML no
-  # sistema central.
-  rsshub:
-    image: diygod/rsshub:2026-07-24
-    container_name: rsshub
-    restart: unless-stopped
-    ports:
-      - "1200:1200"
-    environment:
-      - NODE_ENV=production
-      - TZ=America/Sao_Paulo
-    mem_limit: 512m
-    cpus: 1.0
-    networks:
-      - occam_network
-
+    api-occam:
+        build:
+            context: /DATA/AppData/projeto-occam/app
+            dockerfile: Dockerfile
+        cpus: 2
+        cpu_shares: 90
+        command: []
+        container_name: dr_occam_api
+        deploy:
+            resources:
+                limits:
+                    memory: "8145338368"
+        environment:
+            EMBEDDING_API_BASE: http://192.168.0.6:1234/v1
+            EMBEDDING_API_KEY: lm-studio
+            EMBEDDING_DIMENSIONS: "768"
+            EMBEDDING_DOCUMENT_PREFIX: 'search_document:'
+            EMBEDDING_MODEL: openai/text-embedding-nomic-embed-text-v1.5
+            EMBEDDING_QUERY_PREFIX: 'search_query:'
+            EMBEDDING_TIMEOUT_SECONDS: "240"
+            INTENT_LLM_TIMEOUT_SECONDS: "240"
+            LLM_API_BASE_1: http://192.168.0.6:1234/v1
+            LLM_API_KEY_1: lm-studio
+            LLM_API_KEY_2: PREENCHER_DEPOIS
+            LLM_MODEL_1: openai/google/gemma-4-e4b
+            LLM_MODEL_2: gemini/gemini-1.5-flash
+            LLM_TIMEOUT_SECONDS: "240"
+            MAX_CONTENT_LENGTH: "10000"
+            NEGATIVE_KEYWORDS: fofoca,celebridade,horóscopo,reality show, reconciliação, astrologia, assédio, discriminação, talks to Tech Life, desfile orgulho
+            SUMMARY_LLM_TIMEOUT_SECONDS: "240"
+            SUMMARY_MAX_ARTICLES: "400"
+            TZ: America/Sao_Paulo
+        env_file:
+            - /DATA/AppData/projeto-occam/.env
+        hostname: dr_occam_api
+        image: dr-occam:local
+        mem_limit: "2147483648"
+        networks:
+            occam_network: null
+        ports:
+            - mode: ingress
+              target: 8000
+              published: "8383"
+              protocol: tcp
+        restart: unless-stopped
+        volumes:
+            - type: bind
+              source: /DATA/AppData/projeto-occam/app
+              target: /app
+              bind:
+                create_host_path: true
+            - type: bind
+              source: /DATA/AppData/projeto-occam/app/data
+              target: /app/data
+              bind:
+                create_host_path: true
+    rsshub:
+        cpus: 1
+        cpu_shares: 90
+        command: []
+        container_name: rsshub
+        deploy:
+            resources:
+                limits:
+                    memory: "8145338368"
+        environment:
+            NODE_ENV: production
+            TZ: America/Sao_Paulo
+        hostname: rsshub
+        image: diygod/rsshub:2026-07-24
+        mem_limit: "536870912"
+        networks:
+            occam_network: null
+        ports:
+            - mode: ingress
+              target: 1200
+              published: "1200"
+              protocol: tcp
+        restart: unless-stopped
 networks:
-  occam_network:
-    driver: bridge
-
+    default:
+        name: projeto-occam_default
+    occam_network:
+        name: projeto-occam_occam_network
+        driver: bridge
+x-casaos:
+    author: self
+    category: self
+    hostname: 192.168.0.11
+    icon: ""
+    index: /
+    is_uncontrolled: false
+    port_map: "8383"
+    scheme: http
+    title:
+        custom: Dr Occam Projeto Pessoal
