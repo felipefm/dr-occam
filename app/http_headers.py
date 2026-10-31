@@ -41,7 +41,11 @@ class BrowserProfile:
             "User-Agent": self.user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": _DEFAULT_ACCEPT_LANGUAGE,
-            "Accept-Encoding": "gzip, deflate, br",
+            # Sem "br": o httpx só decodifica Brotli com o pacote `brotli`
+            # instalado (não está no requirements.txt). Anunciar "br" sem
+            # ele faz o site responder comprimido, o feedparser receber
+            # bytes ilegíveis e o feed sair com 0 itens, sem erro no log.
+            "Accept-Encoding": "gzip, deflate",
             "Upgrade-Insecure-Requests": "1",
             **self.extra_headers,
         }
