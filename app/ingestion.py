@@ -82,7 +82,9 @@ _GOOGLE_NEWS_REDIRECT_RE = re.compile(r"^https://news\.google\.com/rss/articles/
 _GN_DECODE_ID_RE = re.compile(r'data-n-a-id="([^"]+)"')
 _GN_DECODE_TS_RE = re.compile(r'data-n-a-ts="([^"]+)"')
 _GN_DECODE_SG_RE = re.compile(r'data-n-a-sg="([^"]+)"')
-_GN_DECODE_RESULT_RE = re.compile(r'"garturlres","(https?://[^"]+)"')
+# A URL vem dentro de uma string JSON aninhada, então as aspas em volta
+# dela podem chegar escapadas (\") — aceita os dois formatos.
+_GN_DECODE_RESULT_RE = re.compile(r'garturlres\\?",\\?"(https?://[^"\\]+)')
 _GN_BATCHEXECUTE_URL = "https://news.google.com/_/DotsSplashUi/data/batchexecute"
 
 
@@ -95,7 +97,9 @@ async def _resolve_google_news_url(client: httpx.AsyncClient, url: str) -> str:
         return url
 
     try:
-        page = await client.get(url)
+        # O Google responde 302 acrescentando hl/gl/ceid ao link; o client
+        # compartilhado não segue redirecionamentos por padrão.
+        page = await client.get(url, follow_redirects=True)
         page.raise_for_status()
         html = page.text
         art_id = _GN_DECODE_ID_RE.search(html).group(1)  # type: ignore[union-attr]
