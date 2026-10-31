@@ -2,10 +2,12 @@
 
 import logging
 import os
+import sqlite3
 from collections.abc import Generator
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
 
 from embeddings.repository import attach_vec_extension, ensure_vec_table
@@ -14,11 +16,22 @@ logger = logging.getLogger(__name__)
 
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./data/occam.db")
 
-_connect_args: dict[str, bool] = (
-    {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+# `timeout` é quanto uma escrita espera por um lock antes de desistir com
+# "database is locked" (padrão do sqlite3: 5s) — curto demais quando uma
+# leitura pesada (ex.: /search, /admin) coincide com o commit da ingestão.
+_connect_args: dict[str, bool | float] = (
+    {"check_same_thread": False, "timeout": 30.0} if DATABASE_URL.startswith("sqlite") else {}
 )
 
 engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
+
+if DATABASE_URL.startswith("sqlite"):
+    # WAL: leitores não bloqueiam o escritor (no modo padrão, uma leitura em
+    # andamento impede qualquer commit até terminar). O modo fica gravado no
+    # arquivo, mas reaplicar a cada conexão é inofensivo.
+    @event.listens_for(engine, "connect")
+    def _enable_wal(dbapi_connection: sqlite3.Connection, _record: object) -> None:
+        dbapi_connection.execute("PRAGMA journal_mode=WAL")
 
 # Precisa rodar logo após criar o engine e antes de qualquer conexão real
 # ser aberta (inclusive as da migração abaixo): o listener só é aplicado a
