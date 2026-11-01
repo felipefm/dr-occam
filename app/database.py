@@ -113,9 +113,39 @@ def _migrate_article_added_columns() -> None:
             )
 
 
+# Colunas acrescentadas a 'pauta_summary' quando os formatos foram para o
+# banco (cópia do nome e do prompt usados em cada versão).
+_PAUTA_SUMMARY_ADDED_COLUMNS: dict[str, str] = {
+    "mode_label": "VARCHAR(120)",
+    "prompt": "TEXT",
+}
+
+
+def _migrate_pauta_summary_added_columns() -> None:
+    from summary.formats import LEGACY_LABELS
+
+    with engine.begin() as conn:
+        columns_info = conn.exec_driver_sql("PRAGMA table_info(pauta_summary)").fetchall()
+        if not columns_info:
+            return  # tabela nova — create_all cria já com as colunas
+
+        existing = {c[1] for c in columns_info}
+        for name, sql_type in _PAUTA_SUMMARY_ADDED_COLUMNS.items():
+            if name not in existing:
+                logger.info("Migrando tabela 'pauta_summary': adicionando coluna '%s'", name)
+                conn.exec_driver_sql(f"ALTER TABLE pauta_summary ADD COLUMN {name} {sql_type}")
+        # Versões geradas antes da migração: nome do formato a partir da chave.
+        for key, label in LEGACY_LABELS.items():
+            conn.exec_driver_sql(
+                "UPDATE pauta_summary SET mode_label = ? WHERE mode_label IS NULL AND mode = ?",
+                (label, key),
+            )
+
+
 def create_db_and_tables() -> None:
     _migrate_article_source_id_nullable()
     _migrate_article_added_columns()
+    _migrate_pauta_summary_added_columns()
     SQLModel.metadata.create_all(engine)
     ensure_vec_table(engine)
 

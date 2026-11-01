@@ -13,7 +13,7 @@ from home import repository
 from home.config import HOME_WINDOW_HOURS, SCAN_GAP_MINUTES
 from models import Article
 from summary import pauta_repository as summary_repository
-from summary.modes import mode_options
+from summary import format_repository
 
 REMOVED_SOURCE_NAME = "Fonte removida"
 
@@ -108,7 +108,7 @@ def build_home(session: Session, now: datetime) -> dict[str, Any]:
         "window_hours": HOME_WINDOW_HOURS,
         "window_start_iso": since.replace(tzinfo=timezone.utc).isoformat(),
         "today_label": f"{to_display_timezone(now):%d/%m/%Y}",
-        "summary_modes": mode_options(),
+        "summary_modes": _format_options(session),
     }
 
 
@@ -127,6 +127,14 @@ def _pauta_items(session: Session) -> list[dict[str, Any]]:
     ]
 
 
+def _format_options(session: Session) -> list[dict[str, str]]:
+    """Formatos ativos para o seletor do quadro de resumo, na ordem do /admin."""
+    return [
+        {"value": f.key, "label": f.label}
+        for f in format_repository.list_formats(session, only_active=True)
+    ]
+
+
 def _chosen_summary_text(session: Session, archive_id: int | None) -> str:
     chosen = summary_repository.get_chosen(session, archive_id)
     return chosen.text if chosen else ""
@@ -139,7 +147,7 @@ def build_pauta_print(session: Session, now: datetime) -> dict[str, Any]:
         "summary_text": _chosen_summary_text(session, None),
         "archive_id": None,
         "article_ids": [a.id for a in repository.get_pauta_articles(session)],
-        "summary_modes": mode_options(),
+        "summary_modes": _format_options(session),
     }
 
 
@@ -187,5 +195,5 @@ def build_archived_pauta_print(session: Session, archive_id: int) -> dict[str, A
         "summary_text": _chosen_summary_text(session, archive_id),
         "archive_id": archive_id,
         "article_ids": [],
-        "summary_modes": mode_options(),
+        "summary_modes": _format_options(session),
     }

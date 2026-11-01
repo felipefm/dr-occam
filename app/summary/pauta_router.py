@@ -2,8 +2,6 @@
 listar, escolher a que vai no envio/impressão e apagar. Lógica em
 summary.pauta_service; consultas em summary.pauta_repository."""
 
-from typing import Literal
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session
@@ -15,24 +13,32 @@ from models import PautaSummary
 from summary import engine as summary_engine
 from summary import pauta_repository as repository
 from summary import pauta_service as service
-from summary.modes import DEFAULT_MODE, MODES
+from summary import format_repository
 from summary.schemas import PautaSummaryCreated, PautaSummaryItem, PautaSummaryList
 from timezone_utils import as_aware_utc
 
 router = APIRouter(tags=["Resumo"])
 
-Mode = Literal["briefing", "corrido"]
-
-
 class GeneratePayload(BaseModel):
-    mode: Mode = Field(default=DEFAULT_MODE, description="Formato do texto.")
+    mode: str = Field(
+        default="briefing",
+        max_length=64,
+        description="Chave do formato (ver GET /api/summary-formats).",
+    )
 
 
-def to_item(summary: PautaSummary) -> PautaSummaryItem:
+def to_item(summary: PautaSummary, current_prompts: dict[str, str]) -> PautaSummaryItem:
+    """`current_prompts`: chave do formato → prompt atual, para marcar as
+    versões geradas com um prompt que já foi editado depois."""
+    current = current_prompts.get(summary.mode)
     return PautaSummaryItem(
         id=summary.id,
         mode=summary.mode,
-        mode_label=MODES.get(summary.mode, {}).get("label", summary.mode),
+        mode_label=summary.mode_label or summary.mode,
+        prompt=summary.prompt,
+        prompt_outdated=bool(
+            summary.prompt and current is not None and current.strip() != summary.prompt.strip()
+        ),
         text=summary.text,
         article_ids=summary.article_ids or [],
         chosen=summary.chosen,
@@ -45,8 +51,9 @@ def _list(archive_id: int | None) -> PautaSummaryList:
         if archive_id is not None and home_repository.get_pauta_archive(session, archive_id) is None:
             raise HTTPException(status_code=404, detail="Pauta arquivada não encontrada")
         summaries = repository.list_summaries(session, archive_id)
+        prompts = {f.key: f.prompt for f in format_repository.list_formats(session)}
         return PautaSummaryList(
-            summaries=[to_item(s) for s in summaries],
+            summaries=[to_item(s, prompts) for s in summaries],
             busy=summary_engine.is_busy(),
         )
 
@@ -56,11 +63,13 @@ async def _generate(archive_id: int | None, mode: str) -> PautaSummaryCreated:
         summary = await service.generate(archive_id, mode)
     except service.ArchiveNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Pauta arquivada não encontrada") from exc
+    except service.FormatUnavailableError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except (service.EmptyPautaError, service.PautaChangedError, summary_engine.SummaryBusyError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except summary_engine.SummaryUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return PautaSummaryCreated(summary=to_item(summary), pipeline_running=pipeline_state.is_running())
+    return PautaSummaryCreated(summary=to_item(summary, {}), pipeline_running=pipeline_state.is_running())
 
 
 _GENERATE_DESCRIPTION = (

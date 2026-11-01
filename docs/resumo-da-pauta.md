@@ -6,7 +6,9 @@
 
 Na tela inicial, o painel da pauta ganhou o quadro **Resumo por IA**. Você escolhe o formato e gera um resumo das notícias da pauta. Dá para gerar várias versões da mesma pauta, nos dois formatos, navegar entre elas (‹ ›) e escolher qual vai no envio e no PDF.
 
-- **Formatos** (`app/summary/modes.py`): *Briefing por temas* (visão geral e depois um parágrafo por tema, padrão) e *Texto corrido*. Para criar outro formato, basta acrescentar uma entrada em `MODES` e o valor em `Mode` (`pauta_router.py`).
+- **Formatos editáveis no `/admin`** (seção "Formatos de resumo da pauta", link direto `/admin#formatos`): nome, prompt, ordem no seletor e ativo/inativo. Dá para criar formatos novos e apagá-los. Os de fábrica, *Briefing por temas* e *Panorama*, só podem ser desativados e têm "Restaurar padrão". O conteúdo de fábrica fica em `app/summary/formats.py` (`DEFAULT_FORMATS`).
+- **Regras fixas do sistema** (`FIXED_RULES` em `formats.py`): anexadas pelo código ao fim de todo prompt, fora do alcance do `/admin`. São elas: sem links/URLs/numeração (o sistema anexa os links) e texto simples, sem markdown. Como reforço, `clean_output` tira asteriscos e `#` que o modelo devolva mesmo assim.
+- **Cada versão guarda o nome e o prompt usados** (`pauta_summary.mode_label` / `prompt`). O quadro mostra "Ver o prompt usado nesta versão" e avisa quando o prompt do formato foi editado depois daquela versão, o que permite comparar o antes e o depois de uma edição.
 - **Entrada do prompt:** o texto original de cada notícia (`original_content`), limitado a `PAUTA_SUMMARY_MAX_CHARS_PER_ARTICLE` (3000) por notícia e `PAUTA_SUMMARY_MAX_TOTAL_CHARS` (60000) no total. Numa pauta arquivada, usa o artigo se ele ainda estiver no banco; senão, o resumo copiado no arquivo.
 - **Versão escolhida:** a primeira versão gerada já fica escolhida; as seguintes só passam a valer depois de "Usar esta versão". Se a versão escolhida for apagada, a mais nova que sobrar assume.
 - **Envio (Telegram/WhatsApp/Copiar) e PDF:** o resumo escolhido vai no topo, seguido da lista de notícias com os links.
@@ -19,14 +21,16 @@ Na tela inicial, o painel da pauta ganhou o quadro **Resumo por IA**. Você esco
 ```
 app/summary/
   engine.py           motor: cascata de LLM, timeout, log, trava de 1 resumo por vez
-  modes.py            formatos da pauta (rótulo + prompt)
+  formats.py          formatos de fábrica, regras fixas, limpeza de markdown
+  format_repository.py / format_router.py   tabela summary_format e API do /admin (/api/summary-formats)
   pauta_service.py    monta a entrada da pauta (atual/arquivada) → engine → grava a versão
   pauta_repository.py tabela pauta_summary
   pauta_router.py     /api/pauta/summaries, /api/pautas/{id}/summaries, /api/pauta-summaries/{id}/choose|DELETE
 app/templates/_pauta_summary.html   quadro visual, incluído em index.html e pauta_print.html
 ```
 
-- Tabela nova `pauta_summary` (criada pelo `create_all`, sem migração): `archive_id` NULL = pauta atual.
+- Tabela `pauta_summary`: `archive_id` NULL = pauta atual. As colunas `mode_label` e `prompt` entraram por migração (`database.py`); versões antigas recebem o nome pelo `LEGACY_LABELS`.
+- Tabela `summary_format`: os formatos de fábrica que faltarem são criados ao subir a aplicação (`ensure_default_formats`), sem sobrescrever edições.
 - **Um resumo por vez** no servidor (`asyncio.Lock` em `engine.py`): um segundo pedido recebe 409 na hora. O motivo é o LLM local compartilhado e o histórico de sobrecarga do host.
 - A sessão do banco não fica aberta durante a chamada ao LLM.
 
@@ -35,7 +39,8 @@ app/templates/_pauta_summary.html   quadro visual, incluído em index.html e pau
 | Caso | Notícias | Prompt tokens | Tempo |
 |---|---|---|---|
 | Pauta atual, briefing | 14 | 8.373 | 46,7s |
-| Pauta atual, texto corrido | 14 | 8.306 | 28,3s |
+| Pauta atual, texto corrido (formato antigo, substituído pelo Panorama) | 14 | 8.306 | 28,3s |
+| Pauta atual, panorama | 24 | 13.227 | 59,7s |
 | Pauta arquivada, briefing | 2 | 1.644 | 15,7s |
 | Pauta atual, briefing | 3 | — | ~24s |
 

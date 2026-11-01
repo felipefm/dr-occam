@@ -15,7 +15,15 @@
 #}
 <style>
   .ps { display: flex; flex-direction: column; gap: 10px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .ps-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   .ps-label { font-size: .8em; text-transform: uppercase; letter-spacing: .06em; color: var(--muted, #646b73); }
+  .ps-edit { font-size: .8em; color: var(--muted, #646b73); }
+  .ps-prompt summary { cursor: pointer; font-size: .8em; color: var(--muted, #646b73); }
+  .ps-prompt pre {
+    margin: 6px 0 0; padding: 10px; border-radius: 8px; border: 1px dashed var(--border, #dfe2e6);
+    font: .78em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; max-height: 220px; overflow: auto;
+    color: var(--fg-soft, #3d4248);
+  }
   .ps-gen { display: flex; flex-wrap: wrap; gap: 8px; }
   .ps select, .ps-btn {
     min-height: 40px; padding: 0 12px; border-radius: 8px; font: inherit; font-size: .9em;
@@ -49,7 +57,10 @@
 <section class="ps" id="pauta-summary" aria-label="Resumo por IA da pauta"
          data-api="{{ summary_api }}"
          data-article-ids="{{ (summary_article_ids or []) | tojson | forceescape }}">
-  <span class="ps-label">Resumo por IA</span>
+  <div class="ps-head">
+    <span class="ps-label">Resumo por IA</span>
+    <a class="ps-edit" href="/admin#formatos" target="_blank" rel="noopener">Editar formatos</a>
+  </div>
   <div class="ps-gen">
     <label class="ps-sr" for="ps-mode">Formato do resumo</label>
     <select id="ps-mode">
@@ -66,7 +77,12 @@
       <span class="ps-meta" id="ps-meta"></span>
     </div>
     <p class="ps-stale" id="ps-stale" hidden>A pauta mudou depois desta versão — gere de novo para incluir as mudanças.</p>
+    <p class="ps-stale" id="ps-outdated" hidden>O prompt deste formato foi editado depois desta versão.</p>
     <div class="ps-text" id="ps-text"></div>
+    <details class="ps-prompt" id="ps-prompt" hidden>
+      <summary>Ver o prompt usado nesta versão</summary>
+      <pre id="ps-prompt-text"></pre>
+    </details>
     <div class="ps-actions">
       <span class="ps-chosen" id="ps-chosen">✓ Esta vai no envio e no PDF</span>
       <button class="ps-btn" type="button" id="ps-choose">Usar esta versão</button>
@@ -88,6 +104,12 @@
     var articleIds = [];
     var generating = false;
     try { articleIds = JSON.parse(root.dataset.articleIds || '[]'); } catch (e) {}
+
+    if (!modeSel.options.length) {
+      genBtn.disabled = true;
+      modeSel.disabled = true;
+      statusEl.textContent = 'Nenhum formato de resumo ativo. Ative um em “Editar formatos”.';
+    }
 
     function setStatus(msg, isError) {
       statusEl.textContent = msg || '';
@@ -134,7 +156,10 @@
       $('ps-next').disabled = index === summaries.length - 1;
       // Versões de pauta arquivada não guardam ids (article_ids vazio).
       $('ps-stale').hidden = !s.article_ids.length || sameIds(s.article_ids, articleIds);
+      $('ps-outdated').hidden = !s.prompt_outdated;
       textEl.textContent = s.text;
+      $('ps-prompt').hidden = !s.prompt;
+      $('ps-prompt-text').textContent = s.prompt || '';
       $('ps-chosen').hidden = !s.chosen;
       $('ps-choose').hidden = s.chosen;
     }
@@ -181,7 +206,7 @@
       }).then(function () {
         clearInterval(timer);
         generating = false;
-        genBtn.disabled = false;
+        genBtn.disabled = !modeSel.options.length;
       });
     });
 

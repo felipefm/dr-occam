@@ -212,6 +212,46 @@
       </div>
     </details>
 
+    <details id="formatos" class="group bg-neutral-900 border border-neutral-800 rounded-lg mb-8 overflow-hidden">
+      <summary class="flex items-center justify-between gap-4 px-5 py-4 cursor-pointer select-none hover:bg-neutral-800/40 rounded-lg transition-colors">
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="text-lg shrink-0" aria-hidden="true">📝</span>
+          <h3 class="text-base font-semibold text-white truncate">Formatos de resumo da pauta</h3>
+          <span id="formats-badge" class="shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-neutral-700 text-neutral-400"></span>
+        </div>
+        <span class="shrink-0 text-neutral-500 transition-transform duration-200 group-open:rotate-180" aria-hidden="true">▾</span>
+      </summary>
+
+      <div class="border-t border-neutral-800 px-5 py-5 flex flex-col gap-5">
+        <p class="text-xs text-neutral-500">
+          Cada formato aparece no seletor do quadro “Resumo por IA” da pauta, na ordem abaixo.
+          O prompt diz à IA como escrever o resumo; cada versão gerada guarda o prompt usado,
+          então dá para comparar o antes e o depois de uma edição.
+        </p>
+
+        <div id="formats-list" class="flex flex-col gap-4"></div>
+        <p id="formats-error" class="hidden text-sm text-red-400"></p>
+
+        <div class="rounded-md border border-dashed border-neutral-700 p-4 flex flex-col gap-3">
+          <h4 class="text-sm font-medium text-neutral-300">Novo formato</h4>
+          <input id="new-format-label" type="text" maxlength="120" placeholder="Nome (ex.: Resumo curto para WhatsApp)"
+            class="rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <textarea id="new-format-prompt" rows="6" maxlength="20000" placeholder="Prompt: quem a IA é, o que recebe e como deve escrever o texto."
+            class="rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+          <div class="flex flex-wrap gap-2">
+            <button id="new-format-btn" type="button" class="rounded-md bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Criar formato</button>
+            <button id="new-format-copy-btn" type="button" class="rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors">Partir do prompt do primeiro formato</button>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="text-sm font-medium text-neutral-300 mb-1">Regras fixas do sistema</h4>
+          <p class="text-xs text-neutral-500 mb-2">Anexadas pelo sistema ao final de todo prompt. Não são editáveis aqui porque o envio depende delas: os links já vão anexados ao resumo, e WhatsApp e Telegram não mostram formatação.</p>
+          <pre id="fixed-rules" class="rounded-md bg-neutral-950 border border-neutral-800 px-3 py-2 text-xs text-neutral-400 whitespace-pre-wrap font-mono"></pre>
+        </div>
+      </div>
+    </details>
+
     <section class="bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden">
       <div class="overflow-x-auto">
         <table id="sources-table" class="w-full text-sm">
@@ -671,6 +711,137 @@
         }, 1500);
       }
     });
+  
+    // --- Formatos de resumo da pauta (API em summary/format_router.py) ---
+    (function () {
+      const details = document.getElementById('formatos');
+      const list = document.getElementById('formats-list');
+      const errorEl = document.getElementById('formats-error');
+      const badge = document.getElementById('formats-badge');
+      const inputCls = 'rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-500';
+      const smallBtn = 'rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
+      let formats = [];
+
+      if (location.hash === '#formatos') details.open = true;
+
+      function showError(msg) {
+        errorEl.textContent = msg || '';
+        errorEl.classList.toggle('hidden', !msg);
+      }
+
+      async function api(method, url, body) {
+        const res = await fetch(url, {
+          method,
+          headers: body ? { 'Content-Type': 'application/json' } : {},
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const detail = Array.isArray(data.detail) ? 'dados inválidos (nome e prompt são obrigatórios)' : data.detail;
+          throw new Error(detail || 'Erro ' + res.status);
+        }
+        return data;
+      }
+
+      function apply(data) {
+        formats = data.formats;
+        document.getElementById('fixed-rules').textContent = data.fixed_rules;
+        const active = formats.filter(f => f.active).length;
+        badge.textContent = active + (active === 1 ? ' ativo' : ' ativos');
+        render();
+      }
+
+      function card(f, i) {
+        const el = document.createElement('div');
+        el.className = 'rounded-md border border-neutral-800 bg-neutral-950/40 p-4 flex flex-col gap-3';
+        const tag = f.builtin
+          ? (f.is_default ? '<span class="rounded-full px-2 py-0.5 text-xs bg-neutral-800 text-neutral-400">Padrão de fábrica</span>'
+                          : '<span class="rounded-full px-2 py-0.5 text-xs bg-amber-500/10 text-amber-400">Editado</span>')
+          : '<span class="rounded-full px-2 py-0.5 text-xs bg-indigo-500/10 text-indigo-300">Criado aqui</span>';
+        el.innerHTML = `
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="text" maxlength="120" class="f-label flex-1 min-w-[180px] ${inputCls}" aria-label="Nome do formato">
+            ${tag}
+            <label class="inline-flex items-center gap-2 text-sm text-neutral-300 cursor-pointer select-none">
+              <input type="checkbox" class="f-active accent-emerald-600 w-4 h-4"> Ativo
+            </label>
+          </div>
+          <textarea rows="12" maxlength="20000" class="f-prompt ${inputCls} font-mono leading-relaxed" aria-label="Prompt do formato"></textarea>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" class="f-save ${smallBtn} bg-indigo-600 hover:bg-indigo-500 text-white" disabled>Salvar</button>
+            <button type="button" class="f-up ${smallBtn} bg-neutral-800 hover:bg-neutral-700 text-neutral-200" aria-label="Subir no seletor" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button type="button" class="f-down ${smallBtn} bg-neutral-800 hover:bg-neutral-700 text-neutral-200" aria-label="Descer no seletor" ${i === formats.length - 1 ? 'disabled' : ''}>↓</button>
+            ${f.builtin
+              ? `<button type="button" class="f-restore ${smallBtn} bg-neutral-800 hover:bg-neutral-700 text-neutral-200" ${f.is_default ? 'disabled' : ''}>Restaurar padrão</button>`
+              : `<button type="button" class="f-delete ${smallBtn} bg-red-600/20 hover:bg-red-600/30 text-red-400">Apagar</button>`}
+            <span class="f-status text-xs text-neutral-500"></span>
+          </div>`;
+        const label = el.querySelector('.f-label');
+        const prompt = el.querySelector('.f-prompt');
+        const activeBox = el.querySelector('.f-active');
+        const save = el.querySelector('.f-save');
+        const status = el.querySelector('.f-status');
+        label.value = f.label;
+        prompt.value = f.prompt;
+        activeBox.checked = f.active;
+
+        function dirty() {
+          return label.value !== f.label || prompt.value !== f.prompt || activeBox.checked !== f.active;
+        }
+        [label, prompt, activeBox].forEach(input => input.addEventListener('input', () => {
+          save.disabled = !dirty();
+          status.textContent = dirty() ? 'Alterações não salvas' : '';
+        }));
+        activeBox.addEventListener('change', () => { save.disabled = !dirty(); });
+
+        async function run(btn, fn) {
+          showError('');
+          btn.disabled = true;
+          try { apply(await fn()); } catch (err) { showError(err.message); btn.disabled = false; }
+        }
+        save.addEventListener('click', () => run(save, () =>
+          api('PUT', '/api/summary-formats/' + f.id, { label: label.value, prompt: prompt.value, active: activeBox.checked })));
+        el.querySelector('.f-up').addEventListener('click', e => run(e.currentTarget, () =>
+          api('POST', '/api/summary-formats/' + f.id + '/move', { direction: 'up' })));
+        el.querySelector('.f-down').addEventListener('click', e => run(e.currentTarget, () =>
+          api('POST', '/api/summary-formats/' + f.id + '/move', { direction: 'down' })));
+        el.querySelector('.f-restore')?.addEventListener('click', e => {
+          if (!confirm('Voltar o nome e o prompt de “' + f.label + '” ao padrão de fábrica? A edição atual se perde.')) return;
+          run(e.currentTarget, () => api('POST', '/api/summary-formats/' + f.id + '/restore'));
+        });
+        el.querySelector('.f-delete')?.addEventListener('click', e => {
+          if (!confirm('Apagar o formato “' + f.label + '”? As versões de resumo já geradas com ele continuam guardadas.')) return;
+          run(e.currentTarget, () => api('DELETE', '/api/summary-formats/' + f.id));
+        });
+        return el;
+      }
+
+      function render() {
+        list.textContent = '';
+        formats.forEach((f, i) => list.appendChild(card(f, i)));
+      }
+
+      const newLabel = document.getElementById('new-format-label');
+      const newPrompt = document.getElementById('new-format-prompt');
+      const newBtn = document.getElementById('new-format-btn');
+      document.getElementById('new-format-copy-btn').addEventListener('click', () => {
+        if (formats.length && (!newPrompt.value.trim() || confirm('Substituir o texto já digitado?'))) {
+          newPrompt.value = formats[0].prompt;
+        }
+      });
+      newBtn.addEventListener('click', async () => {
+        showError('');
+        newBtn.disabled = true;
+        try {
+          apply(await api('POST', '/api/summary-formats', { label: newLabel.value, prompt: newPrompt.value }));
+          newLabel.value = '';
+          newPrompt.value = '';
+        } catch (err) { showError(err.message); }
+        newBtn.disabled = false;
+      });
+
+      api('GET', '/api/summary-formats').then(apply).catch(err => showError('Não foi possível carregar os formatos: ' + err.message));
+    })();
   </script>
 </body>
 </html>

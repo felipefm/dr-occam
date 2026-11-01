@@ -19,10 +19,11 @@ from database import engine
 from home import repository as home_repository
 from home.service import REMOVED_SOURCE_NAME
 from models import PautaSummary
+from summary import format_repository
 from summary import pauta_repository as repository
 from summary.config import PAUTA_SUMMARY_MAX_CHARS_PER_ARTICLE, PAUTA_SUMMARY_MAX_TOTAL_CHARS
 from summary.engine import synthesize
-from summary.modes import MODES
+from summary.formats import clean_output, system_prompt
 
 
 class EmptyPautaError(Exception):
@@ -35,6 +36,10 @@ class PautaChangedError(Exception):
 
 class ArchiveNotFoundError(Exception):
     pass
+
+
+class FormatUnavailableError(Exception):
+    """O formato pedido não existe ou está desativado."""
 
 
 @dataclass
@@ -87,10 +92,14 @@ def _archived_entries(session: Session, archive_id: int) -> list[_Entry]:
     return entries
 
 
-async def generate(archive_id: int | None, mode: str) -> PautaSummary:
+async def generate(archive_id: int | None, format_key: str) -> PautaSummary:
     """Gera e grava uma versão nova do resumo da pauta atual
-    (`archive_id=None`) ou de uma pauta arquivada."""
+    (`archive_id=None`) ou de uma pauta arquivada, no formato `format_key`."""
     with Session(engine) as session:
+        fmt = format_repository.get_by_key(session, format_key)
+        if fmt is None or not fmt.active:
+            raise FormatUnavailableError("Formato de resumo inexistente ou desativado.")
+        label, prompt = fmt.label, fmt.prompt
         if archive_id is None:
             entries, article_ids = _current_entries(session)
         else:
@@ -99,10 +108,10 @@ async def generate(archive_id: int | None, mode: str) -> PautaSummary:
         raise EmptyPautaError("A pauta está vazia — não há nada para resumir.")
 
     result = await synthesize(
-        MODES[mode]["prompt"],
+        system_prompt(prompt),
         _build_prompt(entries),
         f"pauta {'atual' if archive_id is None else f'arquivada id={archive_id}'} "
-        f"modo={mode} artigos={len(entries)}",
+        f"formato={format_key} artigos={len(entries)}",
     )
 
     with Session(engine) as session:
@@ -110,4 +119,6 @@ async def generate(archive_id: int | None, mode: str) -> PautaSummary:
             raise PautaChangedError(
                 "A pauta foi arquivada ou descartada enquanto o resumo era gerado."
             )
-        return repository.add_summary(session, archive_id, mode, result.text, article_ids)
+        return repository.add_summary(
+            session, archive_id, format_key, label, prompt, clean_output(result.text), article_ids
+        )

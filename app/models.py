@@ -114,11 +114,37 @@ class PautaSummary(SQLModel, table=True):
     archive_id: int | None = Field(
         default=None, foreign_key="pauta_archive.id", nullable=True, index=True
     )
-    mode: str = Field(nullable=False, max_length=32)
+    # `mode` é a chave do formato (summary_format.key). `mode_label` e
+    # `prompt` são cópias do nome e do prompt editável no momento da geração:
+    # o formato pode ser editado ou apagado depois, e a versão continua
+    # dizendo de onde veio (NULL só em versões anteriores a essa cópia).
+    mode: str = Field(nullable=False, max_length=64)
+    mode_label: str | None = Field(default=None, max_length=120)
+    prompt: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     text: str = Field(sa_column=Column(Text, nullable=False))
     article_ids: list[int] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     chosen: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class SummaryFormat(SQLModel, table=True):
+    """Formato do resumo da pauta, editável no /admin: o nome que aparece no
+    seletor e o prompt de sistema (a parte editável — as regras fixas do
+    sistema são anexadas pelo código, ver summary/formats.py).
+
+    `key` é estável (não muda ao renomear) e é o que as versões gravam em
+    `pauta_summary.mode`. Os formatos de fábrica têm a mesma `key` de
+    `summary.formats.DEFAULT_FORMATS`, o que habilita "Restaurar padrão"."""
+
+    __tablename__ = "summary_format"
+
+    id: int | None = Field(default=None, primary_key=True)
+    key: str = Field(nullable=False, unique=True, index=True, max_length=64)
+    label: str = Field(nullable=False, max_length=120)
+    prompt: str = Field(sa_column=Column(Text, nullable=False))
+    position: int = Field(default=0, nullable=False)
+    active: bool = Field(default=True, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
 class ScheduleConfig(SQLModel, table=True):

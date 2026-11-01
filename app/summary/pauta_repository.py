@@ -46,13 +46,21 @@ def archive_ids_with_summary(session: Session) -> set[int]:
 
 
 def add_summary(
-    session: Session, archive_id: int | None, mode: str, text: str, article_ids: list[int]
+    session: Session,
+    archive_id: int | None,
+    mode: str,
+    mode_label: str,
+    prompt: str,
+    text: str,
+    article_ids: list[int],
 ) -> PautaSummary:
     """Grava uma versão nova. A primeira versão de uma pauta já entra como
     escolhida; as seguintes só passam a valer quando o usuário escolhe."""
     summary = PautaSummary(
         archive_id=archive_id,
         mode=mode,
+        mode_label=mode_label,
+        prompt=prompt,
         text=text,
         article_ids=article_ids,
         chosen=get_chosen(session, archive_id) is None,
