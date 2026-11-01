@@ -238,6 +238,9 @@
             class="rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
           <textarea id="new-format-prompt" rows="6" maxlength="20000" placeholder="Prompt: quem a IA é, o que recebe e como deve escrever o texto."
             class="rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+          <label class="inline-flex items-center gap-2 text-sm text-neutral-300 cursor-pointer select-none">
+            <input id="new-format-coverage" type="checkbox" checked class="accent-emerald-600 w-4 h-4"> Garantir todas as notícias
+          </label>
           <div class="flex flex-wrap gap-2">
             <button id="new-format-btn" type="button" class="rounded-md bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Criar formato</button>
             <button id="new-format-copy-btn" type="button" class="rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors">Partir do prompt do primeiro formato</button>
@@ -766,6 +769,10 @@
               <input type="checkbox" class="f-active accent-emerald-600 w-4 h-4"> Ativo
             </label>
           </div>
+          <label class="inline-flex items-start gap-2 text-sm text-neutral-300 cursor-pointer select-none">
+            <input type="checkbox" class="f-coverage accent-emerald-600 w-4 h-4 mt-0.5">
+            <span>Garantir todas as notícias <span class="text-xs text-neutral-500">— confere quais a IA deixou de fora e as completa em “Também na pauta:”, numa segunda rodada</span></span>
+          </label>
           <textarea rows="12" maxlength="20000" class="f-prompt ${inputCls} font-mono leading-relaxed" aria-label="Prompt do formato"></textarea>
           <div class="flex flex-wrap items-center gap-2">
             <button type="button" class="f-save ${smallBtn} bg-indigo-600 hover:bg-indigo-500 text-white" disabled>Salvar</button>
@@ -779,20 +786,26 @@
         const label = el.querySelector('.f-label');
         const prompt = el.querySelector('.f-prompt');
         const activeBox = el.querySelector('.f-active');
+        const coverageBox = el.querySelector('.f-coverage');
         const save = el.querySelector('.f-save');
         const status = el.querySelector('.f-status');
         label.value = f.label;
         prompt.value = f.prompt;
         activeBox.checked = f.active;
+        coverageBox.checked = f.ensure_full_coverage;
 
         function dirty() {
-          return label.value !== f.label || prompt.value !== f.prompt || activeBox.checked !== f.active;
+          return label.value !== f.label || prompt.value !== f.prompt || activeBox.checked !== f.active
+            || coverageBox.checked !== f.ensure_full_coverage;
         }
-        [label, prompt, activeBox].forEach(input => input.addEventListener('input', () => {
+        [label, prompt, activeBox, coverageBox].forEach(input => input.addEventListener('input', () => {
           save.disabled = !dirty();
           status.textContent = dirty() ? 'Alterações não salvas' : '';
         }));
-        activeBox.addEventListener('change', () => { save.disabled = !dirty(); });
+        [activeBox, coverageBox].forEach(box => box.addEventListener('change', () => {
+          save.disabled = !dirty();
+          status.textContent = dirty() ? 'Alterações não salvas' : '';
+        }));
 
         async function run(btn, fn) {
           showError('');
@@ -800,7 +813,7 @@
           try { apply(await fn()); } catch (err) { showError(err.message); btn.disabled = false; }
         }
         save.addEventListener('click', () => run(save, () =>
-          api('PUT', '/api/summary-formats/' + f.id, { label: label.value, prompt: prompt.value, active: activeBox.checked })));
+          api('PUT', '/api/summary-formats/' + f.id, { label: label.value, prompt: prompt.value, active: activeBox.checked, ensure_full_coverage: coverageBox.checked })));
         el.querySelector('.f-up').addEventListener('click', e => run(e.currentTarget, () =>
           api('POST', '/api/summary-formats/' + f.id + '/move', { direction: 'up' })));
         el.querySelector('.f-down').addEventListener('click', e => run(e.currentTarget, () =>
@@ -833,7 +846,7 @@
         showError('');
         newBtn.disabled = true;
         try {
-          apply(await api('POST', '/api/summary-formats', { label: newLabel.value, prompt: newPrompt.value }));
+          apply(await api('POST', '/api/summary-formats', { label: newLabel.value, prompt: newPrompt.value, ensure_full_coverage: document.getElementById('new-format-coverage').checked }));
           newLabel.value = '';
           newPrompt.value = '';
         } catch (err) { showError(err.message); }

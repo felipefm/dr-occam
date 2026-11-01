@@ -22,6 +22,10 @@ router = APIRouter(prefix="/api/summary-formats", tags=["Resumo"])
 class FormatCreatePayload(BaseModel):
     label: str = Field(..., min_length=1, max_length=120)
     prompt: str = Field(..., min_length=1, max_length=20000)
+    ensure_full_coverage: bool = Field(
+        default=True,
+        description="Conferir se todas as notícias foram citadas e completar as que faltarem.",
+    )
 
 
 class FormatUpdatePayload(FormatCreatePayload):
@@ -41,6 +45,7 @@ def to_item(fmt: SummaryFormat) -> SummaryFormatItem:
         prompt=fmt.prompt,
         position=fmt.position,
         active=fmt.active,
+        ensure_full_coverage=fmt.ensure_full_coverage,
         builtin=default is not None,
         is_default=default is not None
         and default["label"] == fmt.label
@@ -78,7 +83,9 @@ def list_formats() -> SummaryFormatList:
 @router.post("", status_code=201, response_model=SummaryFormatList, summary="Criar formato")
 def create_format(payload: FormatCreatePayload) -> SummaryFormatList:
     with Session(engine) as session:
-        repository.create_format(session, payload.label.strip(), payload.prompt.strip())
+        repository.create_format(
+            session, payload.label.strip(), payload.prompt.strip(), payload.ensure_full_coverage
+        )
         return _list(session)
 
 
@@ -87,7 +94,12 @@ def update_format(format_id: int, payload: FormatUpdatePayload) -> SummaryFormat
     with Session(engine) as session:
         fmt = _get_or_404(session, format_id)
         repository.update_format(
-            session, fmt, payload.label.strip(), payload.prompt.strip(), payload.active
+            session,
+            fmt,
+            payload.label.strip(),
+            payload.prompt.strip(),
+            payload.active,
+            payload.ensure_full_coverage,
         )
         return _list(session)
 

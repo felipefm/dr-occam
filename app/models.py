@@ -122,6 +122,12 @@ class PautaSummary(SQLModel, table=True):
     mode_label: str | None = Field(default=None, max_length=120)
     prompt: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     text: str = Field(sa_column=Column(Text, nullable=False))
+    # Resultado da conferência de cobertura (summary/coverage.py):
+    # {"total": N, "completed": [{"n": 3, "title": "..."}, ...]} — notícias
+    # que a IA deixou de fora e o sistema completou em "Também na pauta:".
+    # NULL = não conferida (formato sem "garantir todas", versão antiga ou
+    # falha do provedor de embeddings).
+    coverage: dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     article_ids: list[int] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     chosen: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
@@ -144,6 +150,9 @@ class SummaryFormat(SQLModel, table=True):
     prompt: str = Field(sa_column=Column(Text, nullable=False))
     position: int = Field(default=0, nullable=False)
     active: bool = Field(default=True, nullable=False)
+    # Conferir se todas as notícias foram citadas e completar as que
+    # faltarem numa segunda rodada (summary/coverage.py).
+    ensure_full_coverage: bool = Field(default=True, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 

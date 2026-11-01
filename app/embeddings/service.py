@@ -40,14 +40,7 @@ def build_embedding_text(article: Article) -> str:
     return f"{EMBEDDING_DOCUMENT_PREFIX}{text[:MAX_EMBEDDING_INPUT_CHARS]}"
 
 
-async def generate_embedding(text: str) -> tuple[list[float], str]:
-    """Chama o provedor de embeddings configurado para um texto qualquer.
-
-    Função de baixo nível reaproveitada tanto para embedar artigos
-    (`embed_article`, abaixo) quanto para embedar a query de busca
-    (search/service.py) — mesmo modelo, mesma configuração, para que a
-    query e os artigos caiam no mesmo espaço vetorial.
-    """
+def _provider_kwargs() -> dict[str, object]:
     kwargs: dict[str, object] = {}
     if EMBEDDING_API_BASE:
         kwargs["api_base"] = EMBEDDING_API_BASE
@@ -58,9 +51,29 @@ async def generate_embedding(text: str) -> tuple[list[float], str]:
         # outros provedores/modelos ignoram esse kwarg ou devem ser
         # configurados com EMBEDDING_DIMENSIONS já igual à saída nativa deles.
         kwargs["dimensions"] = EMBEDDING_DIMENSIONS
+    return kwargs
 
+
+async def generate_embeddings(texts: list[str]) -> list[list[float]]:
+    """Vários textos numa única chamada ao provedor, na mesma ordem. Usado
+    pela conferência de cobertura do resumo da pauta (summary/coverage.py),
+    que compara dezenas de frases curtas de uma vez."""
     response = await litellm.aembedding(
-        model=EMBEDDING_MODEL, input=[text], timeout=EMBEDDING_TIMEOUT_SECONDS, **kwargs
+        model=EMBEDDING_MODEL, input=texts, timeout=EMBEDDING_TIMEOUT_SECONDS, **_provider_kwargs()
+    )
+    return [item["embedding"] for item in response.data]
+
+
+async def generate_embedding(text: str) -> tuple[list[float], str]:
+    """Chama o provedor de embeddings configurado para um texto qualquer.
+
+    Função de baixo nível reaproveitada tanto para embedar artigos
+    (`embed_article`, abaixo) quanto para embedar a query de busca
+    (search/service.py) — mesmo modelo, mesma configuração, para que a
+    query e os artigos caiam no mesmo espaço vetorial.
+    """
+    response = await litellm.aembedding(
+        model=EMBEDDING_MODEL, input=[text], timeout=EMBEDDING_TIMEOUT_SECONDS, **_provider_kwargs()
     )
     vector: list[float] = response.data[0]["embedding"]
     return vector, EMBEDDING_MODEL

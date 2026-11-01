@@ -53,6 +53,7 @@ def add_summary(
     prompt: str,
     text: str,
     article_ids: list[int],
+    coverage: dict | None = None,
 ) -> PautaSummary:
     """Grava uma versão nova. A primeira versão de uma pauta já entra como
     escolhida; as seguintes só passam a valer quando o usuário escolhe."""
@@ -62,6 +63,7 @@ def add_summary(
         mode_label=mode_label,
         prompt=prompt,
         text=text,
+        coverage=coverage,
         article_ids=article_ids,
         chosen=get_chosen(session, archive_id) is None,
     )

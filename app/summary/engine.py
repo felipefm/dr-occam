@@ -15,6 +15,8 @@ que pode levar minutos.
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import litellm
@@ -49,40 +51,50 @@ class SynthesisResult:
     elapsed_seconds: float
 
 
-async def synthesize(system_prompt: str, user_prompt: str, label: str) -> SynthesisResult:
-    """Gera o texto de síntese. `label` identifica a origem no log (ex.:
-    "pauta atual modo=briefing artigos=8")."""
+@asynccontextmanager
+async def exclusive() -> AsyncIterator[None]:
+    """Reserva o motor para uma geração inteira (que pode ter mais de uma
+    chamada ao LLM, como a rodada de complemento da cobertura). Levanta
+    SummaryBusyError na hora se outro resumo estiver em andamento."""
     if not LLM_CASCADE:
         raise SummaryUnavailableError("Nenhum modelo de IA configurado")
     if _lock.locked():
         raise SummaryBusyError(
             "Já há um resumo sendo gerado. Espere ele terminar e tente de novo."
         )
-
     async with _lock:
-        primary, *fallbacks = LLM_CASCADE
-        primary_kwargs = {k: v for k, v in primary.items() if k != "model"}
+        yield
 
-        started_at = time.monotonic()
-        try:
-            response = await litellm.acompletion(
-                model=primary["model"],
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.2,
-                timeout=SUMMARY_LLM_TIMEOUT_SECONDS,
-                fallbacks=fallbacks or None,
-                **primary_kwargs,
-            )
-        except Exception as exc:
-            logger.exception(
-                "Resumo (%s): falha na cascata de LLM (tempo=%.1fs)",
-                label, time.monotonic() - started_at,
-            )
-            raise SummaryUnavailableError("Não foi possível gerar o resumo no momento") from exc
-        elapsed = time.monotonic() - started_at
+
+async def complete(system_prompt: str, user_prompt: str, label: str) -> SynthesisResult:
+    """Uma chamada à cascata de LLM. Chamar dentro de `exclusive()`.
+    `label` identifica a origem no log (ex.: "pauta atual formato=briefing
+    artigos=8")."""
+    if not _lock.locked():
+        raise RuntimeError("summary.engine.complete() fora de exclusive()")
+    primary, *fallbacks = LLM_CASCADE
+    primary_kwargs = {k: v for k, v in primary.items() if k != "model"}
+
+    started_at = time.monotonic()
+    try:
+        response = await litellm.acompletion(
+            model=primary["model"],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            timeout=SUMMARY_LLM_TIMEOUT_SECONDS,
+            fallbacks=fallbacks or None,
+            **primary_kwargs,
+        )
+    except Exception as exc:
+        logger.exception(
+            "Resumo (%s): falha na cascata de LLM (tempo=%.1fs)",
+            label, time.monotonic() - started_at,
+        )
+        raise SummaryUnavailableError("Não foi possível gerar o resumo no momento") from exc
+    elapsed = time.monotonic() - started_at
 
     usage = getattr(response, "usage", None)
     prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0

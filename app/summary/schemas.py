@@ -11,6 +11,7 @@ class PautaSummaryItem(BaseModel):
     mode_label: str
     prompt: str | None  # prompt editável usado (NULL em versões antigas)
     prompt_outdated: bool  # o prompt do formato foi editado depois desta versão
+    coverage: dict | None  # {"total": N, "completed": [{"n", "title"}]}; None = não conferida
     text: str
     article_ids: list[int]
     chosen: bool
@@ -34,6 +35,7 @@ class SummaryFormatItem(BaseModel):
     prompt: str
     position: int
     active: bool
+    ensure_full_coverage: bool
     builtin: bool  # formato de fábrica: tem "Restaurar padrão" e não pode ser apagado
     is_default: bool  # nome e prompt iguais aos de fábrica
     updated_at: datetime

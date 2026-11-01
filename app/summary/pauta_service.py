@@ -11,6 +11,7 @@ A sessão do banco não fica aberta durante a chamada ao LLM (que pode
 levar minutos): lê a pauta, fecha, gera, e abre outra sessão para gravar.
 """
 
+import logging
 from dataclasses import dataclass
 
 from sqlmodel import Session
@@ -22,8 +23,11 @@ from models import PautaSummary
 from summary import format_repository
 from summary import pauta_repository as repository
 from summary.config import PAUTA_SUMMARY_MAX_CHARS_PER_ARTICLE, PAUTA_SUMMARY_MAX_TOTAL_CHARS
-from summary.engine import synthesize
+from summary import coverage
+from summary.engine import complete, exclusive
 from summary.formats import clean_output, system_prompt
+
+logger = logging.getLogger(__name__)
 
 
 class EmptyPautaError(Exception):
@@ -46,7 +50,8 @@ class FormatUnavailableError(Exception):
 class _Entry:
     title: str
     source: str
-    text: str
+    text: str  # texto original (limitado no prompt) — entrada da 1ª rodada
+    summary: str  # resumo neutro do pipeline — conferência e 2ª rodada
 
 
 def _build_prompt(entries: list[_Entry]) -> str:
@@ -73,6 +78,7 @@ def _current_entries(session: Session) -> tuple[list[_Entry], list[int]]:
             title=a.ai_title or "(sem título)",
             source=source_names.get(a.source_id, REMOVED_SOURCE_NAME),
             text=a.original_content or a.ai_summary or "",
+            summary=a.ai_summary or "",
         )
         for a in articles
     ]
@@ -88,18 +94,57 @@ def _archived_entries(session: Session, archive_id: int) -> list[_Entry]:
     for item in archive.items:
         article = by_url.get(item["url"])
         text = article.original_content if article else item.get("summary", "")
-        entries.append(_Entry(title=item["title"], source=item["source"], text=text or ""))
+        entries.append(
+            _Entry(
+                title=item["title"],
+                source=item["source"],
+                text=text or "",
+                summary=item.get("summary", ""),
+            )
+        )
     return entries
+
+
+async def _complete_coverage(text: str, entries: list[_Entry], label: str) -> tuple[str, dict | None]:
+    """Confere quais notícias o texto não citou e, se faltar alguma, pede à
+    IA um trecho curto para cada uma (2ª rodada) e as acrescenta em
+    "Também na pauta:". Devolve o texto final e o registro de cobertura
+    (None se a conferência não pôde ser feita — o texto da 1ª rodada vale
+    assim mesmo)."""
+    items = [coverage.CoverageItem(e.title, e.summary or e.text[:600]) for e in entries]
+    try:
+        missing = await coverage.find_missing(text, items)
+    except Exception:
+        logger.exception("Resumo (%s): conferência de cobertura falhou; seguindo sem ela", label)
+        return text, None
+
+    record = {
+        "total": len(entries),
+        "completed": [{"n": i + 1, "title": entries[i].title} for i in missing],
+    }
+    if not missing:
+        return text, record
+
+    missing_items = [items[i] for i in missing]
+    result = await complete(
+        coverage.COMPLETION_PROMPT,
+        coverage.completion_input(missing_items),
+        f"{label} complemento={len(missing)}",
+    )
+    fragments = coverage.parse_completion(clean_output(result.text), missing_items)
+    return coverage.append_also(text, fragments), record
 
 
 async def generate(archive_id: int | None, format_key: str) -> PautaSummary:
     """Gera e grava uma versão nova do resumo da pauta atual
-    (`archive_id=None`) ou de uma pauta arquivada, no formato `format_key`."""
+    (`archive_id=None`) ou de uma pauta arquivada, no formato `format_key`.
+    Com "garantir todas as notícias" ligado no formato, confere a cobertura
+    e completa as que faltarem numa 2ª rodada."""
     with Session(engine) as session:
         fmt = format_repository.get_by_key(session, format_key)
         if fmt is None or not fmt.active:
             raise FormatUnavailableError("Formato de resumo inexistente ou desativado.")
-        label, prompt = fmt.label, fmt.prompt
+        label, prompt, ensure_full = fmt.label, fmt.prompt, fmt.ensure_full_coverage
         if archive_id is None:
             entries, article_ids = _current_entries(session)
         else:
@@ -107,12 +152,15 @@ async def generate(archive_id: int | None, format_key: str) -> PautaSummary:
     if not entries:
         raise EmptyPautaError("A pauta está vazia — não há nada para resumir.")
 
-    result = await synthesize(
-        system_prompt(prompt),
-        _build_prompt(entries),
+    log_label = (
         f"pauta {'atual' if archive_id is None else f'arquivada id={archive_id}'} "
-        f"formato={format_key} artigos={len(entries)}",
+        f"formato={format_key} artigos={len(entries)}"
     )
+    async with exclusive():
+        result = await complete(system_prompt(prompt), _build_prompt(entries), log_label)
+        text, coverage_record = clean_output(result.text), None
+        if ensure_full:
+            text, coverage_record = await _complete_coverage(text, entries, log_label)
 
     with Session(engine) as session:
         if archive_id is None and not home_repository.get_pauta_articles(session):
@@ -120,5 +168,5 @@ async def generate(archive_id: int | None, format_key: str) -> PautaSummary:
                 "A pauta foi arquivada ou descartada enquanto o resumo era gerado."
             )
         return repository.add_summary(
-            session, archive_id, format_key, label, prompt, clean_output(result.text), article_ids
+            session, archive_id, format_key, label, prompt, text, article_ids, coverage_record
         )

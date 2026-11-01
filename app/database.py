@@ -118,7 +118,20 @@ def _migrate_article_added_columns() -> None:
 _PAUTA_SUMMARY_ADDED_COLUMNS: dict[str, str] = {
     "mode_label": "VARCHAR(120)",
     "prompt": "TEXT",
+    "coverage": "JSON",
 }
+
+
+def _migrate_summary_format_added_columns() -> None:
+    with engine.begin() as conn:
+        columns_info = conn.exec_driver_sql("PRAGMA table_info(summary_format)").fetchall()
+        if not columns_info:
+            return  # tabela nova — create_all cria já com as colunas
+        if "ensure_full_coverage" not in {c[1] for c in columns_info}:
+            logger.info("Migrando tabela 'summary_format': adicionando coluna 'ensure_full_coverage'")
+            conn.exec_driver_sql(
+                "ALTER TABLE summary_format ADD COLUMN ensure_full_coverage BOOLEAN NOT NULL DEFAULT 1"
+            )
 
 
 def _migrate_pauta_summary_added_columns() -> None:
@@ -146,6 +159,7 @@ def create_db_and_tables() -> None:
     _migrate_article_source_id_nullable()
     _migrate_article_added_columns()
     _migrate_pauta_summary_added_columns()
+    _migrate_summary_format_added_columns()
     SQLModel.metadata.create_all(engine)
     ensure_vec_table(engine)
 

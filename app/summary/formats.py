@@ -55,6 +55,35 @@ DEFAULT_FORMATS: dict[str, dict[str, str]] = {
         "- Nos parágrafos seguintes, trate dos outros assuntos que tenham "
         "relevância própria, ligando notícias apenas quando houver relação "
         "real entre elas. Nunca invente ligação entre fatos sem relação.\n"
+        "- Todas as notícias precisam aparecer. As que não couberem nos "
+        "parágrafos entram numa única frase final que comece com "
+        '"Também na pauta:", com poucas palavras para cada uma, separadas por '
+        "ponto e vírgula.\n"
+        "- Não use conectivos vazios para emendar assuntos sem relação, como "
+        '"Em outras esferas", "Em outras notícias", "Paralelamente", '
+        '"Por fim" ou "Em um contexto mais amplo".'
+        + "\n\n"
+        + _EDITORIAL_RULES,
+    },
+}
+
+# Prompts de fábrica anteriores, por formato. Ao subir a aplicação, um
+# formato cujo prompt ainda é idêntico a um destes (ou seja, nunca foi
+# editado no /admin) é atualizado para o prompt de fábrica atual; um
+# formato editado nunca é tocado. Ao mudar um prompt em DEFAULT_FORMATS,
+# acrescente o texto antigo aqui.
+PREVIOUS_DEFAULT_PROMPTS: dict[str, list[str]] = {
+    "panorama": [
+        _INTRO
+        + "\n\n"
+        + "Escreva um panorama da pauta em texto corrido, de 3 a 4 parágrafos, "
+        "separados por uma linha em branco:\n"
+        "- Comece pelo assunto principal da pauta (o que reúne mais notícias "
+        "ou tem mais peso) e desenvolva-o num parágrafo encadeado, mostrando "
+        "como os fatos se relacionam.\n"
+        "- Nos parágrafos seguintes, trate dos outros assuntos que tenham "
+        "relevância própria, ligando notícias apenas quando houver relação "
+        "real entre elas. Nunca invente ligação entre fatos sem relação.\n"
         "- Não é preciso citar todas as notícias: assuntos isolados e menores "
         'podem ficar de fora ou entrar numa única frase final que comece com '
         '"Também na pauta:".\n'
@@ -63,7 +92,7 @@ DEFAULT_FORMATS: dict[str, dict[str, str]] = {
         '"Por fim" ou "Em um contexto mais amplo".'
         + "\n\n"
         + _EDITORIAL_RULES,
-    },
+    ],
 }
 
 # Rótulos de formatos que existiram antes de os formatos irem para o banco

@@ -18,6 +18,10 @@
   .ps-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   .ps-label { font-size: .8em; text-transform: uppercase; letter-spacing: .06em; color: var(--muted, #646b73); }
   .ps-edit { font-size: .8em; color: var(--muted, #646b73); }
+  .ps-coverage { font-size: .82em; color: var(--muted, #646b73); }
+  .ps-coverage.is-ok { color: var(--accent, #0d8a69); }
+  .ps-coverage summary { cursor: pointer; }
+  .ps-coverage ol { margin: 4px 0 0; padding-left: 1.6em; line-height: 1.5; }
   .ps-prompt summary { cursor: pointer; font-size: .8em; color: var(--muted, #646b73); }
   .ps-prompt pre {
     margin: 6px 0 0; padding: 10px; border-radius: 8px; border: 1px dashed var(--border, #dfe2e6);
@@ -79,6 +83,7 @@
     <p class="ps-stale" id="ps-stale" hidden>A pauta mudou depois desta versão — gere de novo para incluir as mudanças.</p>
     <p class="ps-stale" id="ps-outdated" hidden>O prompt deste formato foi editado depois desta versão.</p>
     <div class="ps-text" id="ps-text"></div>
+    <div class="ps-coverage" id="ps-coverage" hidden></div>
     <details class="ps-prompt" id="ps-prompt" hidden>
       <summary>Ver o prompt usado nesta versão</summary>
       <pre id="ps-prompt-text"></pre>
@@ -145,6 +150,36 @@
         d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     }
 
+    // Resultado da conferência de cobertura (summary/coverage.py).
+    function renderCoverage(cov) {
+      var el = $('ps-coverage');
+      el.textContent = '';
+      el.hidden = !cov;
+      el.classList.remove('is-ok');
+      if (!cov) return;
+      var done = cov.completed || [];
+      if (!done.length) {
+        el.classList.add('is-ok');
+        el.textContent = '✓ Todas as ' + cov.total + ' notícias foram citadas no texto.';
+        return;
+      }
+      var details = document.createElement('details');
+      var summary = document.createElement('summary');
+      summary.textContent = 'Cobertura: ' + (cov.total - done.length) + ' de ' + cov.total +
+        ' no texto + ' + done.length + (done.length === 1 ? ' completada' : ' completadas') +
+        ' em “Também na pauta:” (ver quais)';
+      var list = document.createElement('ol');
+      done.forEach(function (d) {
+        var li = document.createElement('li');
+        li.value = d.n;
+        li.textContent = d.title;
+        list.appendChild(li);
+      });
+      details.appendChild(summary);
+      details.appendChild(list);
+      el.appendChild(details);
+    }
+
     function render() {
       versionEl.hidden = summaries.length === 0;
       if (!summaries.length) return;
@@ -158,6 +193,7 @@
       $('ps-stale').hidden = !s.article_ids.length || sameIds(s.article_ids, articleIds);
       $('ps-outdated').hidden = !s.prompt_outdated;
       textEl.textContent = s.text;
+      renderCoverage(s.coverage);
       $('ps-prompt').hidden = !s.prompt;
       $('ps-prompt-text').textContent = s.prompt || '';
       $('ps-chosen').hidden = !s.chosen;

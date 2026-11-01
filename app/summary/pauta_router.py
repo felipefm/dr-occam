@@ -36,6 +36,7 @@ def to_item(summary: PautaSummary, current_prompts: dict[str, str]) -> PautaSumm
         mode=summary.mode,
         mode_label=summary.mode_label or summary.mode,
         prompt=summary.prompt,
+        coverage=summary.coverage,
         prompt_outdated=bool(
             summary.prompt and current is not None and current.strip() != summary.prompt.strip()
         ),
