@@ -30,7 +30,6 @@ services:
             MAX_CONTENT_LENGTH: "10000"
             NEGATIVE_KEYWORDS: fofoca,celebridade,horóscopo,reality show, reconciliação, astrologia, assédio, discriminação, talks to Tech Life, desfile orgulho
             SUMMARY_LLM_TIMEOUT_SECONDS: "240"
-            SUMMARY_MAX_ARTICLES: "400"
             TZ: America/Sao_Paulo
         env_file:
             - /DATA/AppData/projeto-occam/.env

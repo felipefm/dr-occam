@@ -1,6 +1,8 @@
 # Plano de implementação — POC: Resumo de notícias por período
 
-**Status:** plano pronto para execução, nenhum código escrito ainda.
+> **Status: abandonada em 2026-11-01.** O volume diário passou de ~190 para ~350 notícias (~62 mil tokens por dia), acima do contexto de 51.200 tokens do modelo local (gemma-4-e4b), e resumir o dia inteiro exigiria map-reduce. A necessidade foi atendida pelo **resumo por IA da pauta** (`docs/resumo-da-pauta.md`), que resume só as notícias escolhidas (~8 mil tokens para 14 notícias). O código da POC foi removido; ele continua no histórico do git (commit "Adicionar POC de resumo de notícias por período") e na branch `poc-resumo-por-periodo`. O motor de chamada ao LLM (`app/summary/engine.py`) e os helpers de data em `app/timezone_utils.py`, que vieram da POC, continuam em uso.
+
+**Status original (2026-08-13):** plano pronto para execução, nenhum código escrito ainda.
 **Depende de:** `poc-resumo-por-periodo.md` (análise de viabilidade e decisões de escopo, seção 8 já respondida em 2026-08-13). Este documento não repete a análise — só traduz as decisões em passos de implementação.
 
 **Decisões já tomadas (resumo, ver seção 8 do doc de origem):**

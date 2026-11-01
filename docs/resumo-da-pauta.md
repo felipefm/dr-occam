@@ -1,6 +1,6 @@
 # Resumo por IA da pauta
 
-**Status:** implementado na branch `resumo-pauta` (2026-11-01), a partir da POC de resumo por período.
+**Status:** implementado na branch `resumo-pauta` (2026-11-01). Substitui a POC de resumo por período, abandonada (ver `docs/poc-resumo-por-periodo.md`).
 
 ## O que faz
 
@@ -18,8 +18,7 @@ Na tela inicial, o painel da pauta ganhou o quadro **Resumo por IA**. Você esco
 
 ```
 app/summary/
-  engine.py           motor compartilhado: cascata de LLM, timeout, log, trava de 1 resumo por vez
-  service.py          resumo por período (POC) → engine
+  engine.py           motor: cascata de LLM, timeout, log, trava de 1 resumo por vez
   modes.py            formatos da pauta (rótulo + prompt)
   pauta_service.py    monta a entrada da pauta (atual/arquivada) → engine → grava a versão
   pauta_repository.py tabela pauta_summary
@@ -28,7 +27,7 @@ app/templates/_pauta_summary.html   quadro visual, incluído em index.html e pau
 ```
 
 - Tabela nova `pauta_summary` (criada pelo `create_all`, sem migração): `archive_id` NULL = pauta atual.
-- **Um resumo por vez** no servidor (`asyncio.Lock` em `engine.py`), valendo para pauta e período: um segundo pedido recebe 409 na hora. O motivo é o LLM local compartilhado e o histórico de sobrecarga do host.
+- **Um resumo por vez** no servidor (`asyncio.Lock` em `engine.py`): um segundo pedido recebe 409 na hora. O motivo é o LLM local compartilhado e o histórico de sobrecarga do host.
 - A sessão do banco não fica aberta durante a chamada ao LLM.
 
 ## Medições (cópia do banco, LM Studio gemma-4-e4b, 2026-11-01)
@@ -40,6 +39,6 @@ app/templates/_pauta_summary.html   quadro visual, incluído em index.html e pau
 | Pauta arquivada, briefing | 2 | 1.644 | 15,7s |
 | Pauta atual, briefing | 3 | — | ~24s |
 
-## Achado sobre a POC por período
+## Por que não resumir o período inteiro
 
-Em 2026-11-01 o dia já tinha **356** notícias, cerca de 62 mil tokens. O gemma-4-e4b está carregado no LM Studio com contexto de **51.200** tokens, então `/api/summary?days=1` responde 503 (o LM Studio devolve 400). O teto atual, `SUMMARY_MAX_ARTICLES=400`, não protege contra isso. Com `SUMMARY_MAX_ARTICLES=150` funcionou: ~25 mil tokens, 108s. A próxima evolução da POC deve limitar o prompt por tokens/caracteres, não por número de artigos, ou partir para o map-reduce.
+A POC de resumo por período foi abandonada ao fazer esta funcionalidade. Em 2026-11-01 o dia já tinha 356 notícias, cerca de 62 mil tokens, acima do contexto de 51.200 tokens do modelo local. A pauta resolve a mesma necessidade com um volume pequeno e previsível. Detalhes em `docs/poc-resumo-por-periodo.md`.

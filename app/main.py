@@ -38,7 +38,6 @@ from home.router import router as home_router
 from pipeline import run_pipeline
 from search.router import router as search_router
 from summary.pauta_router import router as pauta_summary_router
-from summary.router import router as summary_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -90,9 +89,8 @@ TAGS_METADATA = [
     },
     {
         "name": "Resumo",
-        "description": "Sínteses por IA: dos artigos de um período curto e fixo (POC, "
-        "hoje / últimos 2 ou 3 dias) e da pauta (atual ou arquivada), com várias "
-        "versões por pauta e uma escolhida para envio e impressão.",
+        "description": "Resumo por IA da pauta (atual ou arquivada), com várias versões "
+        "por pauta e uma escolhida para envio e impressão.",
     },
     {
         "name": "Admin",
@@ -134,7 +132,6 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 templates = Jinja2Templates(directory="templates")
 app.include_router(home_router)
 app.include_router(search_router)
-app.include_router(summary_router)
 app.include_router(pauta_summary_router)
 
 

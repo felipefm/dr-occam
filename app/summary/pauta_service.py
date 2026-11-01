@@ -1,8 +1,8 @@
 """Resumo por IA de uma pauta (atual ou arquivada).
 
-Usa o mesmo motor do resumo por período (summary/engine.py), mas a entrada
-é diferente: a pauta é curta e escolhida a dedo, então cada notícia entra
-com o texto original (limitado), e não só com o resumo do pipeline. Para
+Usa o motor de síntese (summary/engine.py). A pauta é curta e escolhida a
+dedo, então cada notícia entra com o texto original (limitado), e não só
+com o resumo do pipeline. Para
 uma pauta arquivada, o texto original vem do artigo se ele ainda estiver
 no banco; se a limpeza de artigos antigos já o apagou, entra o resumo
 copiado no arquivo.

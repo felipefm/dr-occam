@@ -1,7 +1,7 @@
-"""Motor de síntese compartilhado pelos resumos do Dr. Occam (por período e
-da pauta): recebe um prompt de sistema e o texto com as notícias, chama a
-cascata de LLM com o timeout próprio do resumo e registra tokens e tempo
-no log.
+"""Motor de síntese do resumo por IA da pauta: recebe um prompt de sistema
+e o texto com as notícias, chama a cascata de LLM com o timeout próprio do
+resumo e registra tokens e tempo no log. (Nasceu da POC de resumo por
+período, abandonada — ver docs/poc-resumo-por-periodo.md.)
 
 Só um resumo roda por vez no processo: o prompt de um resumo é ordens de
 magnitude maior que os prompts por artigo do pipeline, e o LLM local é
@@ -51,7 +51,7 @@ class SynthesisResult:
 
 async def synthesize(system_prompt: str, user_prompt: str, label: str) -> SynthesisResult:
     """Gera o texto de síntese. `label` identifica a origem no log (ex.:
-    "período days=2", "pauta modo=briefing artigos=8")."""
+    "pauta atual modo=briefing artigos=8")."""
     if not LLM_CASCADE:
         raise SummaryUnavailableError("Nenhum modelo de IA configurado")
     if _lock.locked():
