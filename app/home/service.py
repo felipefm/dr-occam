@@ -12,6 +12,8 @@ from article_format import format_summary, to_display_timezone
 from home import repository
 from home.config import HOME_WINDOW_HOURS, SCAN_GAP_MINUTES
 from models import Article
+from summary import pauta_repository as summary_repository
+from summary.modes import mode_options
 
 REMOVED_SOURCE_NAME = "Fonte removida"
 
@@ -106,6 +108,7 @@ def build_home(session: Session, now: datetime) -> dict[str, Any]:
         "window_hours": HOME_WINDOW_HOURS,
         "window_start_iso": since.replace(tzinfo=timezone.utc).isoformat(),
         "today_label": f"{to_display_timezone(now):%d/%m/%Y}",
+        "summary_modes": mode_options(),
     }
 
 
@@ -124,10 +127,19 @@ def _pauta_items(session: Session) -> list[dict[str, Any]]:
     ]
 
 
+def _chosen_summary_text(session: Session, archive_id: int | None) -> str:
+    chosen = summary_repository.get_chosen(session, archive_id)
+    return chosen.text if chosen else ""
+
+
 def build_pauta_print(session: Session, now: datetime) -> dict[str, Any]:
     return {
         "items": _pauta_items(session),
         "subtitle": f"gerada em {to_display_timezone(now):%d/%m/%Y %H:%M}",
+        "summary_text": _chosen_summary_text(session, None),
+        "archive_id": None,
+        "article_ids": [a.id for a in repository.get_pauta_articles(session)],
+        "summary_modes": mode_options(),
     }
 
 
@@ -148,6 +160,8 @@ def _archive_label(archived_at: datetime) -> str:
 
 
 def build_pauta_archives(session: Session) -> dict[str, Any]:
+    archives = repository.list_pauta_archives(session)
+    with_summary = summary_repository.archive_ids_with_summary(session)
     return {
         "archives": [
             {
@@ -155,8 +169,9 @@ def build_pauta_archives(session: Session) -> dict[str, Any]:
                 "label": _archive_label(a.archived_at),
                 "count": len(a.items),
                 "titles": [item["title"] for item in a.items],
+                "has_summary": a.id in with_summary,
             }
-            for a in repository.list_pauta_archives(session)
+            for a in archives
         ]
     }
 
@@ -169,4 +184,8 @@ def build_archived_pauta_print(session: Session, archive_id: int) -> dict[str, A
         "items": archive.items,
         "subtitle": f"arquivada em {_archive_label(archive.archived_at)}",
         "back_url": "/pautas",
+        "summary_text": _chosen_summary_text(session, archive_id),
+        "archive_id": archive_id,
+        "article_ids": [],
+        "summary_modes": mode_options(),
     }

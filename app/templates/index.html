@@ -225,6 +225,8 @@
     .pauta-list .ttl { font-size: .93em; line-height: 1.4; }
     .pauta-list .rm { flex: 0 0 32px; height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
     .pauta-list .rm:hover { background: var(--surface); color: var(--fg); }
+    .pauta-summary-wrap { padding-top: 12px; border-top: 1px solid var(--border); }
+    .pauta-summary-wrap[hidden] { display: none; }
     .pauta-send { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
     .send-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     .send-grid .btn { width: 100%; }
@@ -356,6 +358,9 @@
       </div>
       <p class="pauta-hint" id="pauta-hint">Abra uma notícia e use “Adicionar à pauta” para separar os temas do dia.</p>
       <ol class="pauta-list" id="pauta-list"></ol>
+      <div class="pauta-summary-wrap" id="pauta-summary-wrap" hidden>
+        {% with summary_api="/api/pauta/summaries", summary_article_ids=(pauta | map(attribute="id") | list) %}{% include "_pauta_summary.html" %}{% endwith %}
+      </div>
       <div class="pauta-send" id="pauta-send" hidden>
         <div class="section-label" style="padding: 0">Enviar pauta</div>
         <div class="send-grid">
@@ -612,8 +617,21 @@
       var pautaList = document.getElementById('pauta-list');
       var pautaFeedback = document.getElementById('pauta-feedback');
 
+      // Resumo por IA escolhido (ver _pauta_summary.html): quando existe, vai
+      // no topo do texto enviado, antes da lista de notícias com os links.
+      var summaryEl = document.getElementById('pauta-summary');
+      // Os resumos podem ter carregado antes deste script rodar.
+      var chosenSummary = summaryEl.pautaSummary.chosen();
+      summaryEl.addEventListener('pauta-summary-change', function (e) {
+        chosenSummary = e.detail.chosen;
+        document.getElementById('pauta-preview').textContent = pautaText(false);
+      });
+
       function pautaText(withSummaries) {
         var lines = ['Pauta — ' + TODAY_LABEL, plural(pauta.length, 'tema', 'temas'), ''];
+        if (chosenSummary) {
+          lines.push('RESUMO', chosenSummary.text, '', 'NOTÍCIAS', '');
+        }
         pauta.forEach(function (p, i) {
           lines.push((i + 1) + '. ' + p.title);
           if (withSummaries && p.summary) lines.push('   ' + p.summary);
@@ -627,6 +645,8 @@
         document.getElementById('pauta-count').textContent = pauta.length;
         document.getElementById('pauta-hint').hidden = pauta.length > 0;
         document.getElementById('pauta-send').hidden = pauta.length === 0;
+        document.getElementById('pauta-summary-wrap').hidden = pauta.length === 0;
+        summaryEl.pautaSummary.setArticleIds(pauta.map(function (p) { return p.id; }));
         pautaList.textContent = '';
         pauta.forEach(function (p, i) {
           var li = document.createElement('li');
@@ -742,6 +762,7 @@
         postJSON('POST', '/api/pauta/archive').then(function () {
           pauta = [];
           renderPauta();
+          summaryEl.pautaSummary.reload();  // os resumos foram junto para o arquivo
           sayPauta('Pauta arquivada — ela fica em “Pautas arquivadas”.');
         }).catch(function (err) {
           alert('Não foi possível arquivar a pauta: ' + err.message);
@@ -752,7 +773,9 @@
         var previous = pauta.slice();
         pauta = [];
         renderPauta();
-        postJSON('DELETE', '/api/pauta').catch(function (err) {
+        postJSON('DELETE', '/api/pauta').then(function () {
+          summaryEl.pautaSummary.reload();  // os resumos da pauta descartada somem junto
+        }).catch(function (err) {
           pauta = previous;
           renderPauta();
           alert('Não foi possível esvaziar a pauta: ' + err.message);

@@ -20,3 +20,23 @@ class SummaryResponse(BaseModel):
     summary_text: str
     sources: list[SummarySourceItem]
     pipeline_running: bool
+
+
+class PautaSummaryItem(BaseModel):
+    id: int
+    mode: str
+    mode_label: str
+    text: str
+    article_ids: list[int]
+    chosen: bool
+    created_at: datetime
+
+
+class PautaSummaryList(BaseModel):
+    summaries: list[PautaSummaryItem]
+    busy: bool
+
+
+class PautaSummaryCreated(BaseModel):
+    summary: PautaSummaryItem
+    pipeline_running: bool

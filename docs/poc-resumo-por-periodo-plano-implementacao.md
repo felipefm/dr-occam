@@ -221,3 +221,8 @@ Implementado na branch `poc-resumo-por-periodo`: refactor dos helpers de data pa
 **Pendente:** validar `days=2`/`3` com volume de artigos realmente maior — só será possível numa sessão futura, depois que a base acumular mais dias de histórico. Até lá, o teto de 3 dias é uma aposta razoável (dado que 1 dia já usa ~70% do timeout no pior caso observado), mas não totalmente validado.
 
 **Validação de UI:** implementada (aba "Resumir por período" em `/search`, reaproveitando os padrões visuais e de JS já existentes), mas **não testada em navegador nesta sessão** — a extensão Claude in Chrome não estava configurada no ambiente. Precisa de um clique manual de ponta a ponta antes de considerar a POC encerrada (ver seção 7 do doc de origem, critério de sucesso).
+
+## 10. Atualização (2026-11-01)
+
+- A chamada ao LLM foi extraída para `app/summary/engine.py`, compartilhada com o resumo da pauta (ver `docs/resumo-da-pauta.md`). Agora um segundo pedido simultâneo recebe 409 em vez de rodar em paralelo.
+- Com 356 notícias no dia (~62 mil tokens), `days=1` estoura o contexto de 51.200 tokens do gemma-4-e4b e responde 503. `SUMMARY_MAX_ARTICLES=400` é folgado demais; com 150 funcionou em 108s. Detalhes em `docs/resumo-da-pauta.md`.

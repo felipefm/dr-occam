@@ -6,7 +6,8 @@ from sqlmodel import Session
 
 from database import engine
 from summary.schemas import SummaryResponse
-from summary.service import SummaryUnavailableError, build_period_summary
+from summary.engine import SummaryBusyError, SummaryUnavailableError
+from summary.service import build_period_summary
 
 router = APIRouter(prefix="/api/summary", tags=["Resumo"])
 
@@ -41,5 +42,7 @@ async def summarize_period(
     with Session(engine) as session:
         try:
             return await build_period_summary(session, days)
+        except SummaryBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except SummaryUnavailableError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc

@@ -1,0 +1,215 @@
+{#
+  Resumo por IA da pauta: gerar versões (em um dos formatos), navegar entre
+  elas, escolher a que vai no envio/impressão e apagar. Incluído na tela
+  inicial (pauta atual) e na página de impressão (atual ou arquivada).
+
+  Contexto esperado: `summary_modes` (lista de {value, label}) e
+  `summary_api` (URL base: /api/pauta/summaries ou /api/pautas/<id>/summaries).
+  Opcional: `summary_article_ids` — ids da pauta atual, para avisar quando
+  uma versão foi feita com outra composição da pauta.
+
+  Conversa com a página por eventos em #pauta-summary:
+    - dispara "pauta-summary-change" (detail.chosen: versão escolhida ou null);
+    - expõe el.pautaSummary.setArticleIds(ids) e el.pautaSummary.reload().
+  As cores vêm das variáveis da página (com valores padrão para a impressão).
+#}
+<style>
+  .ps { display: flex; flex-direction: column; gap: 10px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .ps-label { font-size: .8em; text-transform: uppercase; letter-spacing: .06em; color: var(--muted, #646b73); }
+  .ps-gen { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ps select, .ps-btn {
+    min-height: 40px; padding: 0 12px; border-radius: 8px; font: inherit; font-size: .9em;
+    border: 1px solid var(--border, #dfe2e6); background: var(--surface, #fff); color: var(--fg, #16181b);
+  }
+  .ps select { flex: 1 1 150px; min-width: 0; }
+  .ps-btn { cursor: pointer; }
+  .ps-btn:hover:not(:disabled) { border-color: var(--muted, #646b73); }
+  .ps-btn:disabled { opacity: .6; cursor: progress; }
+  .ps-btn-primary { border-color: var(--accent, #0d8a69); background: var(--accent, #0d8a69); color: var(--accent-ink, #fff); font-weight: 600; }
+  .ps-status { margin: 0; font-size: .85em; line-height: 1.5; color: var(--muted, #646b73); }
+  .ps-status:empty { display: none; }
+  .ps-status.is-error { color: #c0392b; }
+  .ps-version { display: flex; flex-direction: column; gap: 8px; }
+  .ps-version[hidden] { display: none; }
+  .ps-nav { display: flex; align-items: center; gap: 6px; font-size: .87em; }
+  .ps-nav .ps-btn { min-height: 32px; min-width: 32px; padding: 0 8px; }
+  .ps-pos { font-weight: 600; color: var(--fg, #16181b); }
+  .ps-meta { font-size: .8em; color: var(--muted, #646b73); }
+  .ps-stale { margin: 0; font-size: .82em; color: var(--pauta, #a15c00); }
+  .ps-text {
+    margin: 0; padding: 12px; border-radius: 8px; border: 1px solid var(--border, #dfe2e6);
+    background: var(--bg, #f6f7f8); color: var(--fg-soft, #3d4248);
+    font-size: .88em; line-height: 1.6; white-space: pre-line; max-height: 340px; overflow: auto;
+  }
+  .ps-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .ps-chosen { font-size: .85em; font-weight: 600; color: var(--accent, #0d8a69); }
+  .ps-link { border: 0; background: none; padding: 0; color: var(--muted, #646b73); font: inherit; font-size: .85em; cursor: pointer; text-decoration: underline; }
+  .ps-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+<section class="ps" id="pauta-summary" aria-label="Resumo por IA da pauta"
+         data-api="{{ summary_api }}"
+         data-article-ids="{{ (summary_article_ids or []) | tojson | forceescape }}">
+  <span class="ps-label">Resumo por IA</span>
+  <div class="ps-gen">
+    <label class="ps-sr" for="ps-mode">Formato do resumo</label>
+    <select id="ps-mode">
+      {% for m in summary_modes %}<option value="{{ m.value }}">{{ m.label }}</option>{% endfor %}
+    </select>
+    <button class="ps-btn ps-btn-primary" type="button" id="ps-generate">Gerar resumo</button>
+  </div>
+  <p class="ps-status" id="ps-status" role="status" aria-live="polite"></p>
+  <div class="ps-version" id="ps-version" hidden>
+    <div class="ps-nav">
+      <button class="ps-btn" type="button" id="ps-prev" aria-label="Versão anterior">‹</button>
+      <span class="ps-pos" id="ps-pos"></span>
+      <button class="ps-btn" type="button" id="ps-next" aria-label="Próxima versão">›</button>
+      <span class="ps-meta" id="ps-meta"></span>
+    </div>
+    <p class="ps-stale" id="ps-stale" hidden>A pauta mudou depois desta versão — gere de novo para incluir as mudanças.</p>
+    <div class="ps-text" id="ps-text"></div>
+    <div class="ps-actions">
+      <span class="ps-chosen" id="ps-chosen">✓ Esta vai no envio e no PDF</span>
+      <button class="ps-btn" type="button" id="ps-choose">Usar esta versão</button>
+      <button class="ps-link" type="button" id="ps-delete">Apagar versão</button>
+    </div>
+  </div>
+</section>
+<script>
+  (function () {
+    var root = document.getElementById('pauta-summary');
+    var api = root.dataset.api;
+    var $ = function (id) { return document.getElementById(id); };
+    var modeSel = $('ps-mode'), genBtn = $('ps-generate'), statusEl = $('ps-status');
+    var versionEl = $('ps-version'), textEl = $('ps-text');
+    var SLOW_HINT_SECONDS = 20;
+
+    var summaries = [];
+    var index = -1;
+    var articleIds = [];
+    var generating = false;
+    try { articleIds = JSON.parse(root.dataset.articleIds || '[]'); } catch (e) {}
+
+    function setStatus(msg, isError) {
+      statusEl.textContent = msg || '';
+      statusEl.classList.toggle('is-error', !!isError);
+    }
+
+    function request(method, url, body) {
+      return fetch(url, {
+        method: method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Erro ' + res.status);
+          return data;
+        });
+      });
+    }
+
+    function chosen() {
+      return summaries.filter(function (s) { return s.chosen; })[0] || null;
+    }
+
+    function sameIds(a, b) {
+      if (a.length !== b.length) return false;
+      var sa = a.slice().sort(), sb = b.slice().sort();
+      return sa.every(function (v, i) { return v === sb[i]; });
+    }
+
+    function timeLabel(iso) {
+      var d = new Date(iso);
+      return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' +
+        d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function render() {
+      versionEl.hidden = summaries.length === 0;
+      if (!summaries.length) return;
+      if (index < 0 || index >= summaries.length) index = summaries.length - 1;
+      var s = summaries[index];
+      $('ps-pos').textContent = 'Versão ' + (index + 1) + ' de ' + summaries.length;
+      $('ps-meta').textContent = s.mode_label + ' · ' + timeLabel(s.created_at);
+      $('ps-prev').disabled = index === 0;
+      $('ps-next').disabled = index === summaries.length - 1;
+      // Versões de pauta arquivada não guardam ids (article_ids vazio).
+      $('ps-stale').hidden = !s.article_ids.length || sameIds(s.article_ids, articleIds);
+      textEl.textContent = s.text;
+      $('ps-chosen').hidden = !s.chosen;
+      $('ps-choose').hidden = s.chosen;
+    }
+
+    function apply(list, focusId) {
+      summaries = list;
+      if (focusId != null) {
+        index = summaries.findIndex(function (s) { return s.id === focusId; });
+      } else {
+        var c = chosen();
+        index = c ? summaries.indexOf(c) : summaries.length - 1;
+      }
+      render();
+      root.dispatchEvent(new CustomEvent('pauta-summary-change', { detail: { chosen: chosen() } }));
+    }
+
+    function reload() {
+      return request('GET', api).then(function (data) {
+        apply(data.summaries);
+        if (data.busy && !generating) setStatus('Há um resumo sendo gerado agora (em outra aba ou aparelho).');
+      }).catch(function (err) { setStatus('Não foi possível carregar os resumos: ' + err.message, true); });
+    }
+
+    genBtn.addEventListener('click', function () {
+      var started = Date.now();
+      generating = true;
+      genBtn.disabled = true;
+      function tick() {
+        var secs = Math.round((Date.now() - started) / 1000);
+        setStatus('Gerando resumo… ' + secs + 's' +
+          (secs >= SLOW_HINT_SECONDS ? ' — a IA local pode levar alguns minutos.' : ''));
+      }
+      tick();
+      var timer = setInterval(tick, 1000);
+      request('POST', api, { mode: modeSel.value }).then(function (data) {
+        summaries.push(data.summary);
+        apply(summaries, data.summary.id);
+        setStatus(data.summary.chosen
+          ? 'Resumo pronto em ' + Math.round((Date.now() - started) / 1000) + 's.'
+          : 'Nova versão pronta. Use “Usar esta versão” se preferir esta no envio e no PDF.');
+        if (data.pipeline_running) setStatus(statusEl.textContent + ' (a varredura estava rodando, o que deixa a IA mais lenta.)');
+      }).catch(function (err) {
+        setStatus(err.message, true);
+      }).then(function () {
+        clearInterval(timer);
+        generating = false;
+        genBtn.disabled = false;
+      });
+    });
+
+    $('ps-prev').addEventListener('click', function () { index--; render(); });
+    $('ps-next').addEventListener('click', function () { index++; render(); });
+
+    $('ps-choose').addEventListener('click', function () {
+      var id = summaries[index].id;
+      request('POST', '/api/pauta-summaries/' + id + '/choose').then(function (data) {
+        apply(data.summaries, id);
+        setStatus('');
+      }).catch(function (err) { setStatus('Não foi possível escolher a versão: ' + err.message, true); });
+    });
+
+    $('ps-delete').addEventListener('click', function () {
+      if (!confirm('Apagar esta versão do resumo?')) return;
+      var id = summaries[index].id;
+      request('DELETE', '/api/pauta-summaries/' + id).then(function (data) {
+        apply(data.summaries);
+        setStatus('');
+      }).catch(function (err) { setStatus('Não foi possível apagar a versão: ' + err.message, true); });
+    });
+
+    root.pautaSummary = {
+      setArticleIds: function (ids) { articleIds = ids.slice(); render(); },
+      reload: reload,
+      chosen: chosen
+    };
+    reload();
+  })();
+</script>

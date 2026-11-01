@@ -3,10 +3,10 @@ leitura e pauta."""
 
 from datetime import datetime
 
-from sqlalchemy import func, update
+from sqlalchemy import delete, func, update
 from sqlmodel import Session, select
 
-from models import Article, ArticleStatus, PautaArchive, Source
+from models import Article, ArticleStatus, PautaArchive, PautaSummary, Source
 
 
 def get_window_articles(session: Session, since: datetime) -> list[Article]:
@@ -69,18 +69,28 @@ def set_in_pauta(session: Session, article: Article, in_pauta_at: datetime | Non
 
 
 def clear_pauta(session: Session) -> int:
+    """Esvazia a pauta atual e descarta os resumos dela, que não servem
+    para a próxima pauta."""
     result = session.execute(
         update(Article).where(Article.in_pauta_at.is_not(None)).values(in_pauta_at=None)
     )
+    session.execute(delete(PautaSummary).where(PautaSummary.archive_id.is_(None)))
     session.commit()
     return result.rowcount
 
 
 def archive_and_clear_pauta(session: Session, items: list[dict], archived_at: datetime) -> PautaArchive:
     """Grava a cópia da pauta e a esvazia na mesma transação — nunca fica
-    uma pauta arquivada que continua aberta, nem uma esvaziada sem cópia."""
+    uma pauta arquivada que continua aberta, nem uma esvaziada sem cópia.
+    Os resumos da pauta atual vão junto para o arquivo."""
     archive = PautaArchive(archived_at=archived_at, items=items)
     session.add(archive)
+    session.flush()
+    session.execute(
+        update(PautaSummary)
+        .where(PautaSummary.archive_id.is_(None))
+        .values(archive_id=archive.id)
+    )
     session.execute(
         update(Article).where(Article.in_pauta_at.is_not(None)).values(in_pauta_at=None)
     )

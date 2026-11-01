@@ -97,6 +97,30 @@ class PautaArchive(SQLModel, table=True):
     items: list[dict] = Field(sa_column=Column(JSON, nullable=False))
 
 
+class PautaSummary(SQLModel, table=True):
+    """Uma versão do resumo por IA de uma pauta. Uma pauta pode ter várias
+    versões (gerar de novo, ou em outro modo) e uma delas é a escolhida —
+    a que vai no envio e na impressão.
+
+    `archive_id` NULL = versão da pauta atual (aberta). Ao arquivar a pauta,
+    as versões dela passam a apontar para o arquivo, na mesma transação.
+    `article_ids` guarda de quais artigos a versão foi feita, para a tela
+    avisar quando a pauta atual mudou depois disso (vazio em versões geradas
+    a partir de uma pauta já arquivada)."""
+
+    __tablename__ = "pauta_summary"
+
+    id: int | None = Field(default=None, primary_key=True)
+    archive_id: int | None = Field(
+        default=None, foreign_key="pauta_archive.id", nullable=True, index=True
+    )
+    mode: str = Field(nullable=False, max_length=32)
+    text: str = Field(sa_column=Column(Text, nullable=False))
+    article_ids: list[int] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    chosen: bool = Field(default=False, nullable=False)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
 class ScheduleConfig(SQLModel, table=True):
     """Configuração persistida do agendador interno do pipeline (ver
     scheduler.py). Linha única na tabela — sempre lida/gravada por inteiro,

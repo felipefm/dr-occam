@@ -62,7 +62,7 @@
       <a class="card" href="/pautas/{{ a.id }}">
         <span class="card-head">
           <strong>Pauta de {{ a.label }}</strong>
-          <span class="count">{{ a.count }} {{ "tema" if a.count == 1 else "temas" }}</span>
+          <span class="count">{{ a.count }} {{ "tema" if a.count == 1 else "temas" }}{% if a.has_summary %} · com resumo{% endif %}</span>
         </span>
         <ol class="titles">
           {% for title in a.titles[:3] %}<li>{{ title }}</li>{% endfor %}

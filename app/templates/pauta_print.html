@@ -31,9 +31,14 @@
       font: 600 11pt system-ui, sans-serif; min-height: 44px; padding: 0 18px;
       border-radius: 8px; border: 1px solid #0d8a69; background: #0d8a69; color: #fff; cursor: pointer;
     }
+    .summary { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid #c9cdd2; }
+    .summary[hidden] { display: none; }
+    .section-title { margin: 0 0 10px; font: 600 10pt system-ui, sans-serif; text-transform: uppercase; letter-spacing: .06em; color: #555b62; }
+    .summary p { margin: 0; }
+    .summary-tools { margin-bottom: 24px; padding: 16px; border: 1px solid #dfe2e6; border-radius: 12px; }
     @media print {
       body { padding: 0; }
-      .toolbar { display: none; }
+      .toolbar, .summary-tools { display: none; }
       a { color: #16181b; }
     }
   </style>
@@ -43,11 +48,21 @@
     <button class="print-btn" type="button" onclick="window.print()">Imprimir ou salvar como PDF</button>
     {% if back_url %}<a class="back" href="{{ back_url }}">← Pautas arquivadas</a>{% endif %}
   </div>
+  {% if items %}
+  <div class="summary-tools">
+    {% with summary_api=("/api/pautas/%d/summaries" % archive_id if archive_id else "/api/pauta/summaries"), summary_article_ids=article_ids %}{% include "_pauta_summary.html" %}{% endwith %}
+  </div>
+  {% endif %}
   <header>
     <h1>Pauta</h1>
     <span class="meta">Dr. Occam · {{ subtitle }}</span>
   </header>
   {% if items %}
+  <section class="summary" id="print-summary"{% if not summary_text %} hidden{% endif %}>
+    <h2 class="section-title">Resumo</h2>
+    <p id="print-summary-text">{{ summary_text }}</p>
+  </section>
+  <h2 class="section-title" id="print-list-title"{% if not summary_text %} hidden{% endif %}>Notícias</h2>
   <ol>
     {% for item in items %}
     <li>
@@ -58,6 +73,15 @@
     </li>
     {% endfor %}
   </ol>
+  <script>
+    // A versão escolhida no quadro acima é a que sai impressa.
+    document.getElementById('pauta-summary').addEventListener('pauta-summary-change', function (e) {
+      var chosen = e.detail.chosen;
+      document.getElementById('print-summary').hidden = !chosen;
+      document.getElementById('print-list-title').hidden = !chosen;
+      document.getElementById('print-summary-text').textContent = chosen ? chosen.text : '';
+    });
+  </script>
   {% else %}
   <p>A pauta está vazia. Adicione notícias pela <a href="/">tela inicial</a>.</p>
   {% endif %}
