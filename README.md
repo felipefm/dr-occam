@@ -43,6 +43,8 @@ O `/admin` também tem um botão **"Executar varredura"** (dispara `POST /trigge
 
 A seção **"🕒 Agendamento automático"** (um accordeon `<details>` nativo, recolhido por padrão, com um badge "Ativado"/"Manual" visível mesmo fechado) configura o agendador interno descrito na próxima seção — liga/desliga e lista de horários `HH:MM`, salvos via `PUT /api/schedule`. Detalhe de robustez: alguns navegadores mobile restauram o estado de checkboxes de uma aba suspensa (troca de app/bloqueio de tela) em vez de refletir o HTML atual do servidor; para evitar o badge mostrar "Manual" quando na verdade está ativado (ou vice-versa), a página reconsulta `GET /api/schedule` sempre que volta de um estado suspenso (evento `pageshow` com `persisted: true`).
 
+A seção **"💾 Backup semanal"** mostra quando é o próximo backup, o último feito (ou o erro do último que falhou), as cópias que estão na pasta, e tem um botão "Fazer backup agora". Detalhes em `docs/backup.md`.
+
 ### Agendador automático (`app/scheduler.py`)
 
 O pipeline pode rodar sozinho, em horários configuráveis, **sem depender do cron do sistema operacional hospedeiro**. Implementado com `APScheduler` (`AsyncIOScheduler`, acoplado ao mesmo event loop do `uvicorn`) — cada horário configurado vira um `CronTrigger` com timezone fixo em `America/Sao_Paulo`, independente do fuso do host/container.
@@ -173,6 +175,8 @@ Nenhum desses comandos exige rebuild de imagem — só `docker exec` num contain
 | `GET` | `/api/logs` | Últimas linhas de log em memória (`{"logs": [...]}`), usado pelo modal de logs do `/admin`. |
 | `GET` | `/api/schedule` | Consulta a configuração do agendador automático (`{"enabled": bool, "times": [...]}`). |
 | `PUT` | `/api/schedule` | Atualiza a configuração do agendador (liga/desliga e horários `HH:MM`, fuso `America/Sao_Paulo`) e reconfigura os jobs em tempo real, sem reiniciar o processo. |
+| `GET` | `/api/backup` | Situação do backup semanal: configuração, próximo disparo, último sucesso, último erro e as cópias na pasta (ver `docs/backup.md`). |
+| `POST` | `/api/backup` | Faz um backup agora, em segundo plano. Responde `202`, ou `409` se já houver um em andamento. |
 | `DELETE` | `/api/articles?older_than_days=N` | Remove permanentemente artigos com `created_at` mais antigo que `N` dias, **qualquer status**, e os `llm_processing_log` associados a eles. Irreversível. Responde `{"articles_deleted": N, "logs_deleted": N}`. |
 | `DELETE` | `/api/llm-logs?older_than_days=N` | Remove permanentemente registros de `llm_processing_log` cujo artigo associado tem `created_at` mais antigo que `N` dias (a idade é a do artigo — o log não tem timestamp próprio), mais qualquer log órfão (artigo já apagado). Irreversível. Responde `{"logs_deleted": N}`. |
 
@@ -198,6 +202,11 @@ Nenhum desses comandos exige rebuild de imagem — só `docker exec` num contain
 | `EMBEDDING_DOCUMENT_PREFIX` / `EMBEDDING_QUERY_PREFIX` | Prefixo de tarefa prependido ao texto antes de embedar (default vazio) — obrigatório para modelos `nomic-embed-text` (`"search_document: "` / `"search_query: "`); deixe vazio para provedores como OpenAI. |
 | `INTENT_LLM_TIMEOUT_SECONDS` | Timeout das chamadas de chat auxiliares da busca (extração de data, sugestões de refinamento) — default 10s, aumente se seu modelo local for lento. |
 | `SEARCH_MIN_RELEVANCE_PERCENTAGE` | Piso de relevância (0-100) abaixo do qual um resultado é descartado da busca (default 65). |
+| `BACKUP_ENABLED` | `false` desliga o backup semanal agendado (o botão do `/admin` continua funcionando). Default `true`. |
+| `BACKUP_WEEKDAY` / `BACKUP_TIME` | Dia (`mon`…`sun`) e horário (`HH:MM`, Brasília) do backup semanal. Default domingo, 03:30. |
+| `BACKUP_KEEP` | Quantas cópias manter em `app/data/backups` (default 4). |
+| `BACKUP_DIR` | Pasta das cópias, se não for a padrão (`backups` ao lado do banco). |
+| `BACKUP_MAX_WAIT_MINUTES` | Quanto o backup agendado espera uma varredura em andamento terminar (default 180). |
 
 ## Como rodar
 

@@ -15,12 +15,15 @@ duplicidade; se isso mudar no futuro, mova o agendamento para um processo
 dedicado."""
 
 import logging
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlmodel import Session, select
 
+from backup import config as backup_config
+from backup.service import read_status, scheduled_backup
 from database import engine
 from models import ScheduleConfig
 from pipeline import run_pipeline
@@ -32,6 +35,10 @@ logger = logging.getLogger(__name__)
 # independente do fuso do host/container.
 SCHEDULER_TIMEZONE = ZoneInfo("America/Sao_Paulo")
 JOB_ID_PREFIX = "pipeline-scan"
+BACKUP_JOB_ID = "weekly-backup"
+BACKUP_CATCHUP_JOB_ID = "backup-catchup"
+# Atraso do backup de recuperação, para não disputar disco com o startup.
+BACKUP_CATCHUP_DELAY = timedelta(minutes=10)
 
 scheduler = AsyncIOScheduler(timezone=SCHEDULER_TIMEZONE)
 
@@ -99,9 +106,77 @@ def load_schedule_from_db() -> ScheduleConfig:
         return config
 
 
+def _schedule_backup() -> None:
+    """Backup semanal (backup/config.py). Independe do modo manual das
+    varreduras e não é afetado por `apply_schedule` (prefixo de id diferente)."""
+    if not backup_config.BACKUP_ENABLED:
+        logger.info("Agendador: backup semanal desligado (BACKUP_ENABLED=false)")
+        return
+    hour, minute = _parse_time(backup_config.BACKUP_TIME)
+    scheduler.add_job(
+        scheduled_backup,
+        trigger=CronTrigger(
+            day_of_week=backup_config.BACKUP_WEEKDAY, hour=hour, minute=minute,
+            timezone=SCHEDULER_TIMEZONE,
+        ),
+        id=BACKUP_JOB_ID,
+        name="Backup semanal do banco",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    logger.info(
+        "Agendador: backup semanal às %s de %s (America/Sao_Paulo)",
+        backup_config.BACKUP_TIME, backup_config.BACKUP_WEEKDAY,
+    )
+    _schedule_backup_catchup()
+
+
+def _schedule_backup_catchup() -> None:
+    """Os jobs ficam só em memória: se o container estava fora do ar no
+    horário do backup, o disparo se perde. Ao subir, se o último backup
+    bem-sucedido tem mais de 7 dias (ou nunca houve), agenda um avulso."""
+    last = (read_status().get("last_success") or {}).get("at")
+    try:
+        last_at = datetime.fromisoformat(last) if last else None
+    except ValueError:
+        last_at = None
+    now = datetime.now(timezone.utc)
+    if last_at and now - last_at < timedelta(days=7, hours=1):
+        return
+    run_at = now + BACKUP_CATCHUP_DELAY
+    scheduler.add_job(
+        scheduled_backup,
+        trigger="date",
+        run_date=run_at,
+        id=BACKUP_CATCHUP_JOB_ID,
+        name="Backup de recuperação (último com mais de 7 dias)",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info(
+        "Agendador: último backup %s; backup de recuperação em %d min",
+        f"em {last_at:%d/%m/%Y}" if last_at else "nunca feito",
+        BACKUP_CATCHUP_DELAY.seconds // 60,
+    )
+
+
+def next_backup_run():
+    """Próximo disparo de backup, semanal ou de recuperação (datetime com
+    fuso), ou None."""
+    runs = [
+        job.next_run_time
+        for job in (scheduler.get_job(BACKUP_JOB_ID), scheduler.get_job(BACKUP_CATCHUP_JOB_ID))
+        if job and job.next_run_time
+    ]
+    return min(runs) if runs else None
+
+
 def start_scheduler() -> None:
     config = load_schedule_from_db()
     apply_schedule(config)
+    _schedule_backup()
     if not scheduler.running:
         scheduler.start()
     logger.info(

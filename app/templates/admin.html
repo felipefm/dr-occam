@@ -212,6 +212,36 @@
       </div>
     </details>
 
+    <details id="backup" class="group bg-neutral-900 border border-neutral-800 rounded-lg mb-8 overflow-hidden">
+      <summary class="flex items-center justify-between gap-4 px-5 py-4 cursor-pointer select-none hover:bg-neutral-800/40 rounded-lg transition-colors">
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="text-lg shrink-0" aria-hidden="true">💾</span>
+          <h3 class="text-base font-semibold text-white truncate">Backup semanal</h3>
+          <span id="backup-badge" class="shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-neutral-700 text-neutral-400">…</span>
+        </div>
+        <span class="shrink-0 text-neutral-500 transition-transform duration-200 group-open:rotate-180" aria-hidden="true">▾</span>
+      </summary>
+
+      <div class="border-t border-neutral-800 px-5 py-5 flex flex-col gap-4">
+        <dl class="grid grid-cols-1 sm:grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+          <dt class="text-neutral-500">Quando</dt><dd id="backup-schedule" class="text-neutral-200"></dd>
+          <dt class="text-neutral-500">Próximo</dt><dd id="backup-next" class="text-neutral-200"></dd>
+          <dt class="text-neutral-500">Último</dt><dd id="backup-last" class="text-neutral-200"></dd>
+          <dt class="text-neutral-500">Pasta</dt><dd class="text-neutral-200 break-all"><code>app/data/backups</code> <span class="text-neutral-500">(no container: <code id="backup-dir"></code>)</span></dd>
+        </dl>
+        <p id="backup-error" class="hidden rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"></p>
+        <div>
+          <h4 class="text-xs uppercase tracking-wide text-neutral-500 mb-2">Cópias na pasta</h4>
+          <ul id="backup-files" class="flex flex-col gap-1 text-sm text-neutral-300"></ul>
+          <p id="backup-keep" class="mt-2 text-xs text-neutral-500"></p>
+        </div>
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+          <button id="backup-now-btn" type="button" class="w-full sm:w-auto rounded-md bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Fazer backup agora</button>
+          <span id="backup-status" class="text-sm text-neutral-500"></span>
+        </div>
+      </div>
+    </details>
+
     <details id="formatos" class="group bg-neutral-900 border border-neutral-800 rounded-lg mb-8 overflow-hidden">
       <summary class="flex items-center justify-between gap-4 px-5 py-4 cursor-pointer select-none hover:bg-neutral-800/40 rounded-lg transition-colors">
         <div class="flex items-center gap-3 min-w-0">
@@ -876,6 +906,107 @@
       });
 
       api('GET', '/api/summary-formats').then(apply).catch(err => showError('Não foi possível carregar os formatos: ' + err.message));
+    })();
+  </script>
+  <script>
+    // Backup semanal: situação, cópias na pasta e "Fazer backup agora".
+    (() => {
+      const badge = document.getElementById('backup-badge');
+      const btn = document.getElementById('backup-now-btn');
+      const statusEl = document.getElementById('backup-status');
+      const errorEl = document.getElementById('backup-error');
+      const filesEl = document.getElementById('backup-files');
+      const BADGE_BASE = 'shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ';
+      let pollTimer = null;
+
+      const fmtDate = iso => new Date(iso).toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit',
+        year: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
+      const fmtSize = bytes => bytes >= 2 ** 30
+        ? (bytes / 2 ** 30).toFixed(2).replace('.', ',') + ' GB'
+        : (bytes / 2 ** 20).toFixed(1).replace('.', ',') + ' MB';
+
+      function setBadge(text, cls) {
+        badge.textContent = text;
+        badge.className = BADGE_BASE + cls;
+      }
+
+      function render(data) {
+        document.getElementById('backup-schedule').textContent =
+          data.enabled ? data.schedule_label : 'Agendamento desligado (BACKUP_ENABLED=false)';
+        document.getElementById('backup-next').textContent = data.next_run ? fmtDate(data.next_run) : '—';
+        document.getElementById('backup-dir').textContent = data.directory;
+        const ok = data.last_success;
+        document.getElementById('backup-last').textContent = ok
+          ? fmtDate(ok.at) + ' — ' + ok.file + ' (' + fmtSize(ok.size) + ', ' + ok.trigger + ')'
+          : 'nenhum ainda';
+
+        errorEl.classList.toggle('hidden', !data.last_error);
+        if (data.last_error) {
+          errorEl.textContent = 'Último backup falhou em ' + fmtDate(data.last_error.at) + ': ' + data.last_error.message;
+        }
+
+        filesEl.textContent = '';
+        if (!data.files.length) {
+          const li = document.createElement('li');
+          li.className = 'text-neutral-500';
+          li.textContent = 'Nenhuma cópia na pasta' + (ok ? ' (as anteriores foram movidas ou apagadas).' : '.');
+          filesEl.appendChild(li);
+        }
+        data.files.forEach(f => {
+          const li = document.createElement('li');
+          li.className = 'flex flex-wrap justify-between gap-x-4';
+          const name = document.createElement('code');
+          name.textContent = f.name;
+          const size = document.createElement('span');
+          size.className = 'text-neutral-500';
+          size.textContent = fmtSize(f.size);
+          li.append(name, size);
+          filesEl.appendChild(li);
+        });
+        document.getElementById('backup-keep').textContent =
+          'A pasta guarda as ' + data.keep + ' cópias mais novas; as mais antigas são apagadas a cada backup. O que for movido para fora da pasta não é tocado.';
+
+        btn.disabled = data.running;
+        if (data.running) {
+          statusEl.textContent = data.waiting_for_pipeline ? 'Aguardando a varredura terminar…' : 'Copiando o banco…';
+          setBadge('Em andamento', 'bg-indigo-500/10 text-indigo-300');
+        } else if (data.last_error) {
+          statusEl.textContent = '';
+          setBadge('Falhou', 'bg-red-500/10 text-red-400');
+        } else if (ok) {
+          statusEl.textContent = '';
+          setBadge(new Date(ok.at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' }), 'bg-emerald-500/10 text-emerald-400');
+        } else {
+          statusEl.textContent = '';
+          setBadge('Nenhum ainda', 'bg-neutral-700 text-neutral-400');
+        }
+
+        clearTimeout(pollTimer);
+        if (data.running) pollTimer = setTimeout(load, 2000);
+      }
+
+      async function request(method) {
+        const res = await fetch('/api/backup', { method });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Erro ' + res.status);
+        return data;
+      }
+
+      async function load() {
+        try { render(await request('GET')); }
+        catch (err) { statusEl.textContent = 'Não foi possível consultar o backup: ' + err.message; }
+      }
+
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        statusEl.textContent = 'Iniciando…';
+        try { render(await request('POST')); }
+        catch (err) { statusEl.textContent = err.message; btn.disabled = false; }
+      });
+
+      load();
     })();
   </script>
 </body>

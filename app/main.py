@@ -22,6 +22,7 @@ from sqlmodel import Field, Session, SQLModel, select
 import pipeline_state
 import scheduler as scheduler_service
 from article_format import format_summary
+from backup.router import router as backup_router
 from database import create_db_and_tables, engine
 from embeddings.backfill import run_embedding_backfill
 from llm_processor import run_llm_processing
@@ -117,6 +118,10 @@ TAGS_METADATA = [
         "description": "Configuração do agendador interno que dispara o pipeline "
         "automaticamente em horários definidos, sem depender do cron do SO.",
     },
+    {
+        "name": "Backup",
+        "description": "Backup semanal do banco (cópias em app/data/backups, ver docs/backup.md).",
+    },
 ]
 
 app = FastAPI(
@@ -141,6 +146,7 @@ app.include_router(search_router)
 app.include_router(pauta_summary_router)
 app.include_router(summary_format_router)
 app.include_router(consolidation_router)
+app.include_router(backup_router)
 
 
 class SourceCreatePayload(SQLModel):
