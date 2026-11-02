@@ -38,6 +38,7 @@ from home.router import router as home_router
 from pipeline import run_pipeline
 from search.router import router as search_router
 from summary import format_repository
+from summary.consolidation_router import router as consolidation_router
 from summary.format_router import router as summary_format_router
 from summary.pauta_router import router as pauta_summary_router
 
@@ -94,8 +95,8 @@ TAGS_METADATA = [
     {
         "name": "Resumo",
         "description": "Resumo por IA da pauta (atual ou arquivada), com várias versões "
-        "por pauta e uma escolhida para envio e impressão, e os formatos de resumo "
-        "(nome e prompt) editáveis no /admin.",
+        "por pauta e uma escolhida para envio e impressão; resumo consolidado de várias "
+        "pautas arquivadas; e os formatos de resumo (nome e prompt) editáveis no /admin.",
     },
     {
         "name": "Admin",
@@ -139,6 +140,7 @@ app.include_router(home_router)
 app.include_router(search_router)
 app.include_router(pauta_summary_router)
 app.include_router(summary_format_router)
+app.include_router(consolidation_router)
 
 
 class SourceCreatePayload(SQLModel):

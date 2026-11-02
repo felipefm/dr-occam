@@ -74,7 +74,11 @@ def clear_pauta(session: Session) -> int:
     result = session.execute(
         update(Article).where(Article.in_pauta_at.is_not(None)).values(in_pauta_at=None)
     )
-    session.execute(delete(PautaSummary).where(PautaSummary.archive_id.is_(None)))
+    session.execute(
+        delete(PautaSummary)
+        .where(PautaSummary.archive_id.is_(None))
+        .where(PautaSummary.consolidation_id.is_(None))
+    )
     session.commit()
     return result.rowcount
 
@@ -89,6 +93,7 @@ def archive_and_clear_pauta(session: Session, items: list[dict], archived_at: da
     session.execute(
         update(PautaSummary)
         .where(PautaSummary.archive_id.is_(None))
+        .where(PautaSummary.consolidation_id.is_(None))
         .values(archive_id=archive.id)
     )
     session.execute(

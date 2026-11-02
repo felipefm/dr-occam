@@ -114,6 +114,12 @@ class PautaSummary(SQLModel, table=True):
     archive_id: int | None = Field(
         default=None, foreign_key="pauta_archive.id", nullable=True, index=True
     )
+    # Versão de um resumo consolidado (várias pautas arquivadas) em vez de
+    # uma pauta: `consolidation_id` preenchido e `archive_id` NULL. A pauta
+    # atual é a que tem os dois NULL.
+    consolidation_id: int | None = Field(
+        default=None, foreign_key="consolidation.id", nullable=True, index=True
+    )
     # `mode` é a chave do formato (summary_format.key). `mode_label` e
     # `prompt` são cópias do nome e do prompt editável no momento da geração:
     # o formato pode ser editado ou apagado depois, e a versão continua
@@ -131,6 +137,21 @@ class PautaSummary(SQLModel, table=True):
     article_ids: list[int] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     chosen: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class Consolidation(SQLModel, table=True):
+    """Resumo consolidado de várias pautas arquivadas (ex.: uma semana). A
+    entrada da IA são os resumos escolhidos de cada pauta (ou as notícias,
+    quando a pauta não tem resumo), agrupados por dia — ver
+    summary/consolidation_service.py. As versões ficam em `pauta_summary`
+    com `consolidation_id`."""
+
+    __tablename__ = "consolidation"
+
+    id: int | None = Field(default=None, primary_key=True)
+    # Ids de pauta_archive, em ordem cronológica de arquivamento.
+    archive_ids: list[int] = Field(sa_column=Column(JSON, nullable=False))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False, index=True)
 
 
 class SummaryFormat(SQLModel, table=True):
@@ -153,6 +174,9 @@ class SummaryFormat(SQLModel, table=True):
     # Conferir se todas as notícias foram citadas e completar as que
     # faltarem numa segunda rodada (summary/coverage.py).
     ensure_full_coverage: bool = Field(default=True, nullable=False)
+    # "pauta" (resumo de uma pauta) ou "consolidado" (resumo de várias
+    # pautas arquivadas): cada quadro de resumo só oferece os do seu tipo.
+    kind: str = Field(default="pauta", nullable=False, max_length=20)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 

@@ -119,6 +119,7 @@ _PAUTA_SUMMARY_ADDED_COLUMNS: dict[str, str] = {
     "mode_label": "VARCHAR(120)",
     "prompt": "TEXT",
     "coverage": "JSON",
+    "consolidation_id": "INTEGER",
 }
 
 
@@ -127,10 +128,16 @@ def _migrate_summary_format_added_columns() -> None:
         columns_info = conn.exec_driver_sql("PRAGMA table_info(summary_format)").fetchall()
         if not columns_info:
             return  # tabela nova — create_all cria já com as colunas
-        if "ensure_full_coverage" not in {c[1] for c in columns_info}:
+        existing = {c[1] for c in columns_info}
+        if "ensure_full_coverage" not in existing:
             logger.info("Migrando tabela 'summary_format': adicionando coluna 'ensure_full_coverage'")
             conn.exec_driver_sql(
                 "ALTER TABLE summary_format ADD COLUMN ensure_full_coverage BOOLEAN NOT NULL DEFAULT 1"
+            )
+        if "kind" not in existing:
+            logger.info("Migrando tabela 'summary_format': adicionando coluna 'kind'")
+            conn.exec_driver_sql(
+                "ALTER TABLE summary_format ADD COLUMN kind VARCHAR(20) NOT NULL DEFAULT 'pauta'"
             )
 
 
@@ -147,6 +154,11 @@ def _migrate_pauta_summary_added_columns() -> None:
             if name not in existing:
                 logger.info("Migrando tabela 'pauta_summary': adicionando coluna '%s'", name)
                 conn.exec_driver_sql(f"ALTER TABLE pauta_summary ADD COLUMN {name} {sql_type}")
+        if "consolidation_id" not in existing:
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_pauta_summary_consolidation_id "
+                "ON pauta_summary (consolidation_id)"
+            )
         # Versões geradas antes da migração: nome do formato a partir da chave.
         for key, label in LEGACY_LABELS.items():
             conn.exec_driver_sql(

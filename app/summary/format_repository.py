@@ -34,16 +34,26 @@ def ensure_default_formats(session: Session) -> None:
                 session.add(fmt)
             continue
         session.add(
-            SummaryFormat(key=key, label=default["label"], prompt=default["prompt"], position=position)
+            SummaryFormat(
+                key=key,
+                label=default["label"],
+                prompt=default["prompt"],
+                kind=default["kind"],
+                position=position,
+            )
         )
         position += 1
     session.commit()
 
 
-def list_formats(session: Session, only_active: bool = False) -> list[SummaryFormat]:
+def list_formats(
+    session: Session, only_active: bool = False, kind: str | None = None
+) -> list[SummaryFormat]:
     statement = select(SummaryFormat).order_by(SummaryFormat.position, SummaryFormat.id)
     if only_active:
         statement = statement.where(SummaryFormat.active)
+    if kind is not None:
+        statement = statement.where(SummaryFormat.kind == kind)
     return list(session.exec(statement).all())
 
 
@@ -66,7 +76,11 @@ def _slug(label: str) -> str:
 
 
 def create_format(
-    session: Session, label: str, prompt: str, ensure_full_coverage: bool = True
+    session: Session,
+    label: str,
+    prompt: str,
+    ensure_full_coverage: bool = True,
+    kind: str = "pauta",
 ) -> SummaryFormat:
     """Formato novo, no fim da lista. A chave sai do nome e não muda mais,
     mesmo que o formato seja renomeado depois."""
@@ -80,6 +94,7 @@ def create_format(
         prompt=prompt,
         position=_next_position(session),
         ensure_full_coverage=ensure_full_coverage,
+        kind=kind,
     )
     session.add(fmt)
     session.commit()
@@ -112,13 +127,14 @@ def restore_default(session: Session, fmt: SummaryFormat) -> SummaryFormat:
 
 def move(session: Session, fmt: SummaryFormat, direction: int) -> None:
     """Troca de lugar com o vizinho de cima (-1) ou de baixo (+1)."""
-    formats = list_formats(session)
+    # A ordem vale dentro do tipo: cada seletor só mostra os do seu tipo.
+    formats = list_formats(session, kind=fmt.kind)
     i = next(i for i, f in enumerate(formats) if f.id == fmt.id)
     j = i + direction
     if not 0 <= j < len(formats):
         return
     formats[i], formats[j] = formats[j], formats[i]
-    # Renumera tudo: posições antigas podem estar repetidas ou com buracos.
+    # Renumera o tipo: posições antigas podem estar repetidas ou com buracos.
     for position, f in enumerate(formats):
         f.position = position
         session.add(f)

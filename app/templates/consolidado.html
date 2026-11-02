@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resumo do período — Dr. Occam</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0 auto;
+      max-width: 760px;
+      padding: 32px 24px 48px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 12pt;
+      line-height: 1.5;
+      color: #16181b;
+      background: #ffffff;
+    }
+    header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; border-bottom: 2px solid #16181b; padding-bottom: 8px; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 20pt; }
+    .meta { font-family: system-ui, sans-serif; font-size: 9.5pt; color: #555b62; }
+    p { margin: 0 0 6px; white-space: pre-line; }
+    a { color: #0b57d0; word-break: break-all; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 20px; font-family: system-ui, sans-serif; }
+    .back { font-size: 11pt; }
+    .btn {
+      font: 11pt system-ui, sans-serif; min-height: 44px; padding: 0 16px;
+      border-radius: 8px; border: 1px solid #dfe2e6; background: #fff; color: #16181b; cursor: pointer;
+    }
+    .btn:hover { border-color: #646b73; }
+    .btn.primary { font-weight: 600; border-color: #0d8a69; background: #0d8a69; color: #fff; }
+    .send { display: flex; flex-wrap: wrap; gap: 8px; }
+    .link-quiet { border: 0; background: none; padding: 0; color: #646b73; font: 10pt system-ui, sans-serif; cursor: pointer; text-decoration: underline; }
+    .feedback { margin: 0; font: 10pt system-ui, sans-serif; color: #0d8a69; min-height: 1.2em; flex-basis: 100%; }
+    .note { margin: 0 0 16px; font: 10pt system-ui, sans-serif; color: #a15c00; }
+    .summary { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid #c9cdd2; }
+    .summary[hidden] { display: none; }
+    .section-title { margin: 0 0 10px; font: 600 10pt system-ui, sans-serif; text-transform: uppercase; letter-spacing: .06em; color: #555b62; }
+    .summary p { margin: 0; }
+    .summary-tools { margin-bottom: 24px; padding: 16px; border: 1px solid #dfe2e6; border-radius: 12px; }
+    .day { margin-bottom: 26px; }
+    .day h2 { margin: 0 0 8px; font-size: 14pt; }
+    .day h2 .meta { font-weight: 400; }
+    .pauta-label { margin: 10px 0 6px; font: 600 9.5pt system-ui, sans-serif; color: #555b62; }
+    .pauta-label a { font-weight: 400; }
+    ol.news { margin: 0; padding-left: 1.4em; }
+    ol.news li { margin-bottom: 10px; break-inside: avoid; }
+    ol.news .ttl { font-weight: 600; }
+    ol.news .src { font: 9.5pt system-ui, sans-serif; color: #555b62; }
+    @media print {
+      body { padding: 0; }
+      .toolbar, .summary-tools, .note { display: none; }
+      a { color: #16181b; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="btn primary" type="button" onclick="window.print()">Imprimir ou salvar como PDF</button>
+    <div class="send" aria-label="Enviar o resumo">
+      <button class="btn" type="button" id="send-telegram">Telegram</button>
+      <button class="btn" type="button" id="send-whatsapp">WhatsApp</button>
+      <button class="btn" type="button" id="send-copy">Copiar texto</button>
+    </div>
+    <a class="back" href="/pautas">← Pautas arquivadas</a>
+    <button class="link-quiet" type="button" id="delete-btn">Apagar este consolidado</button>
+    <p class="feedback" id="feedback" role="status"></p>
+  </div>
+
+  {% if without_summary %}
+  <p class="note">{{ without_summary }} {{ "pauta entrou" if without_summary == 1 else "pautas entraram" }} pelas próprias notícias, por não ter resumo escolhido. Para usar o resumo dela, gere e escolha uma versão na página da pauta e gere uma nova versão aqui.</p>
+  {% endif %}
+
+  <div class="summary-tools">
+    {% with summary_api="/api/consolidations/%d/summaries" % consolidation_id, summary_article_ids=[] %}{% include "_pauta_summary.html" %}{% endwith %}
+  </div>
+
+  <header>
+    <h1>Resumo do período</h1>
+    <span class="meta">Dr. Occam · {{ period }} · {{ pauta_count }} pautas · {{ news_count }} notícias</span>
+  </header>
+
+  <section class="summary" id="print-summary"{% if not summary_text %} hidden{% endif %}>
+    <h2 class="section-title">Resumo</h2>
+    <p id="print-summary-text">{{ summary_text }}</p>
+  </section>
+
+  <h2 class="section-title">Notícias por dia</h2>
+  {% for day in days %}
+  <section class="day">
+    <h2>{{ day.label }} <span class="meta">· {{ day.news_count }} {{ "notícia" if day.news_count == 1 else "notícias" }}</span></h2>
+    {% for p in day.pautas %}
+    {% if day.pautas | length > 1 %}<div class="pauta-label">Pauta das {{ p.time }} · <a href="/pautas/{{ p.id }}">ver pauta</a></div>{% endif %}
+    <ol class="news">
+      {% for item in p.news %}
+      <li>
+        <span class="ttl">{{ item.title }}</span>
+        <div class="src">{{ item.source }}{% if item.date %} · {{ item.date }}{% endif %}</div>
+        <a href="{{ item.url }}">{{ item.url }}</a>
+      </li>
+      {% endfor %}
+    </ol>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  <script type="application/json" id="days-data">{{ days | map(attribute="label") | list | tojson }}</script>
+  <script type="application/json" id="days-count">{{ days | map(attribute="news_count") | list | tojson }}</script>
+  <script>
+    (function () {
+      var PERIOD = {{ period | tojson }};
+      var dayLabels = JSON.parse(document.getElementById('days-data').textContent);
+      var dayCounts = JSON.parse(document.getElementById('days-count').textContent);
+      var summaryEl = document.getElementById('pauta-summary');
+      var chosen = summaryEl.pautaSummary.chosen();
+      var feedback = document.getElementById('feedback');
+
+      function say(msg) {
+        feedback.textContent = msg;
+        setTimeout(function () { if (feedback.textContent === msg) feedback.textContent = ''; }, 4000);
+      }
+
+      // O link das pautas usa o endereço da rede local, que não abre para
+      // quem recebe a mensagem — por isso o envio leva só o texto e a
+      // contagem por dia; as notícias com links ficam no PDF.
+      function sendText() {
+        var lines = ['Resumo do período — ' + PERIOD, ''];
+        if (chosen) lines.push(chosen.text, '');
+        lines.push('Notícias por dia:');
+        dayLabels.forEach(function (label, i) {
+          lines.push(label.slice(0, 5) + ' — ' + dayCounts[i] + (dayCounts[i] === 1 ? ' notícia' : ' notícias'));
+        });
+        return lines.join('\n');
+      }
+
+      // A versão escolhida no quadro acima é a que sai impressa e enviada.
+      summaryEl.addEventListener('pauta-summary-change', function (e) {
+        chosen = e.detail.chosen;
+        document.getElementById('print-summary').hidden = !chosen;
+        document.getElementById('print-summary-text').textContent = chosen ? chosen.text : '';
+      });
+
+      function needSummary() {
+        if (chosen) return false;
+        say('Gere um resumo antes de enviar.');
+        return true;
+      }
+      document.getElementById('send-telegram').addEventListener('click', function () {
+        if (needSummary()) return;
+        window.open('https://t.me/share/url?url=' + encodeURIComponent(sendText()), '_blank', 'noopener');
+      });
+      document.getElementById('send-whatsapp').addEventListener('click', function () {
+        if (needSummary()) return;
+        window.open('https://wa.me/?text=' + encodeURIComponent(sendText()), '_blank', 'noopener');
+      });
+      document.getElementById('send-copy').addEventListener('click', function () {
+        if (needSummary()) return;
+        var text = sendText();
+        // navigator.clipboard só existe em HTTPS/localhost; pelo IP da rede
+        // local (http://), cai no método antigo via <textarea>.
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(function () { say('Texto copiado.'); },
+            function () { say('Não foi possível copiar.'); });
+          return;
+        }
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+        say(ok ? 'Texto copiado.' : 'Não foi possível copiar.');
+      });
+
+      document.getElementById('delete-btn').addEventListener('click', function () {
+        if (!confirm('Apagar este consolidado e as versões de resumo dele? As pautas arquivadas não são afetadas.')) return;
+        fetch('/api/consolidations/{{ consolidation_id }}', { method: 'DELETE' }).then(function (res) {
+          if (!res.ok) throw new Error('Erro ' + res.status);
+          window.location.href = '/pautas';
+        }).catch(function (err) { say('Não foi possível apagar: ' + err.message); });
+      });
+    })();
+  </script>
+</body>
+</html>

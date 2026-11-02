@@ -29,6 +29,8 @@ from dataclasses import dataclass
 
 from embeddings.config import EMBEDDING_DOCUMENT_PREFIX, EMBEDDING_QUERY_PREFIX
 from embeddings.service import generate_embeddings
+from summary.engine import complete
+from summary.formats import clean_output
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +38,7 @@ COVERAGE_HIGH: float = float(os.getenv("PAUTA_COVERAGE_HIGH", "0.80"))
 COVERAGE_LOW: float = float(os.getenv("PAUTA_COVERAGE_LOW", "0.74"))
 
 ALSO_PREFIX = "Também na pauta:"
+ALSO_PREFIX_PERIOD = "Também no período:"
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+|;\s*")
 _WORD = re.compile(r"[\wÀ-ÿ][\wÀ-ÿ\-]*")
@@ -120,11 +123,11 @@ async def find_missing(text: str, items: list[CoverageItem]) -> list[int]:
 
 
 COMPLETION_PROMPT = (
-    "Você recebe notícias numeradas que ficaram de fora de um resumo. Para "
-    "cada uma, escreva um trecho curto, de no máximo 15 palavras, com o fato "
-    "principal, em português do Brasil, de forma estritamente factual e sem "
+    "Você recebe itens numerados (notícias ou temas) que ficaram de fora de "
+    "um resumo. Para cada um, escreva um trecho curto, de no máximo 15 "
+    "palavras, com o fato principal, em português do Brasil, de forma estritamente factual e sem "
     "opinião. Comece cada trecho com letra minúscula, a não ser que comece "
-    "com um nome próprio ou sigla. Responda com uma linha por notícia, no "
+    "com um nome próprio ou sigla. Responda com uma linha por item, no "
     "formato \"N: trecho\", na mesma numeração recebida, e nada mais — sem "
     "markdown, sem introdução, sem links."
 )
@@ -155,13 +158,52 @@ def parse_completion(answer: str, items: list[CoverageItem]) -> list[str]:
     return fragments
 
 
-def append_also(text: str, fragments: list[str]) -> str:
-    """Acrescenta os trechos ao "Também na pauta:" do fim do texto, se o
-    último parágrafo já for um; senão, cria esse parágrafo."""
+def append_also(text: str, fragments: list[str], prefix: str = ALSO_PREFIX) -> str:
+    """Acrescenta os trechos ao "Também na pauta:" (ou `prefix`) do fim do
+    texto, se o último parágrafo já for um; senão, cria esse parágrafo."""
     joined = "; ".join(fragments)
     paragraphs = text.rstrip().split("\n")
     last = paragraphs[-1].strip()
-    if last.startswith(ALSO_PREFIX):
+    if last.startswith(prefix):
         paragraphs[-1] = f"{last.rstrip('.').rstrip()}; {joined}."
         return "\n".join(paragraphs)
-    return f"{text.rstrip()}\n\n{ALSO_PREFIX} {joined}."
+    return f"{text.rstrip()}\n\n{prefix} {joined}."
+
+
+async def ensure_coverage(
+    text: str,
+    items: list[CoverageItem],
+    labels: list[str],
+    unit: str,
+    prefix: str,
+    log_label: str,
+) -> tuple[str, dict | None]:
+    """Confere quais itens o texto não citou e, se faltar algum, pede à IA
+    um trecho curto para cada um (2ª rodada) e os acrescenta em `prefix`
+    ("Também na pauta:" / "Também no período:"). Chamar dentro de
+    `engine.exclusive()`. `labels` é o nome de cada item no registro de
+    cobertura exibido na tela.
+
+    Devolve o texto final e o registro {"total", "unit", "completed"}, ou
+    (texto, None) se a conferência não pôde ser feita — o texto da 1ª
+    rodada vale assim mesmo."""
+    try:
+        missing = await find_missing(text, items)
+    except Exception:
+        logger.exception("Resumo (%s): conferência de cobertura falhou; seguindo sem ela", log_label)
+        return text, None
+
+    record = {
+        "total": len(items),
+        "unit": unit,
+        "completed": [{"n": i + 1, "title": labels[i]} for i in missing],
+    }
+    if not missing:
+        return text, record
+
+    missing_items = [items[i] for i in missing]
+    result = await complete(
+        COMPLETION_PROMPT, completion_input(missing_items), f"{log_label} complemento={len(missing)}"
+    )
+    fragments = parse_completion(clean_output(result.text), missing_items)
+    return append_also(text, fragments, prefix), record

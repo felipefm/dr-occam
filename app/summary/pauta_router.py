@@ -47,11 +47,12 @@ def to_item(summary: PautaSummary, current_prompts: dict[str, str]) -> PautaSumm
     )
 
 
-def _list(archive_id: int | None) -> PautaSummaryList:
+def list_scope(archive_id: int | None, consolidation_id: int | None = None) -> PautaSummaryList:
+    """Versões de um escopo: pauta atual, pauta arquivada ou consolidado."""
     with Session(engine) as session:
         if archive_id is not None and home_repository.get_pauta_archive(session, archive_id) is None:
             raise HTTPException(status_code=404, detail="Pauta arquivada não encontrada")
-        summaries = repository.list_summaries(session, archive_id)
+        summaries = repository.list_summaries(session, archive_id, consolidation_id)
         prompts = {f.key: f.prompt for f in format_repository.list_formats(session)}
         return PautaSummaryList(
             summaries=[to_item(s, prompts) for s in summaries],
@@ -87,7 +88,7 @@ _GENERATE_DESCRIPTION = (
     summary="Versões do resumo da pauta atual",
 )
 def list_current() -> PautaSummaryList:
-    return _list(None)
+    return list_scope(None)
 
 
 @router.post(
@@ -107,7 +108,7 @@ async def generate_current(payload: GeneratePayload) -> PautaSummaryCreated:
     summary="Versões do resumo de uma pauta arquivada",
 )
 def list_archived(archive_id: int) -> PautaSummaryList:
-    return _list(archive_id)
+    return list_scope(archive_id)
 
 
 @router.post(
@@ -137,9 +138,9 @@ def _get_or_404(session: Session, summary_id: int) -> PautaSummary:
 def choose(summary_id: int) -> PautaSummaryList:
     with Session(engine) as session:
         summary = _get_or_404(session, summary_id)
-        archive_id = summary.archive_id
+        scope = (summary.archive_id, summary.consolidation_id)
         repository.choose(session, summary)
-    return _list(archive_id)
+    return list_scope(*scope)
 
 
 @router.delete(
@@ -152,6 +153,6 @@ def choose(summary_id: int) -> PautaSummaryList:
 def delete(summary_id: int) -> PautaSummaryList:
     with Session(engine) as session:
         summary = _get_or_404(session, summary_id)
-        archive_id = summary.archive_id
+        scope = (summary.archive_id, summary.consolidation_id)
         repository.delete_summary(session, summary)
-    return _list(archive_id)
+    return list_scope(*scope)

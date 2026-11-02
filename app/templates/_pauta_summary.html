@@ -158,16 +158,21 @@
       el.classList.remove('is-ok');
       if (!cov) return;
       var done = cov.completed || [];
+      var themes = cov.unit === 'temas';
+      var also = themes ? '“Também no período:”' : '“Também na pauta:”';
       if (!done.length) {
         el.classList.add('is-ok');
-        el.textContent = '✓ Todas as ' + cov.total + ' notícias foram citadas no texto.';
+        el.textContent = themes
+          ? '✓ Todos os ' + cov.total + ' temas dos dias foram citados no texto.'
+          : '✓ Todas as ' + cov.total + ' notícias foram citadas no texto.';
         return;
       }
       var details = document.createElement('details');
       var summary = document.createElement('summary');
       summary.textContent = 'Cobertura: ' + (cov.total - done.length) + ' de ' + cov.total +
-        ' no texto + ' + done.length + (done.length === 1 ? ' completada' : ' completadas') +
-        ' em “Também na pauta:” (ver quais)';
+        (themes ? ' temas' : '') + ' no texto + ' + done.length +
+        (themes ? (done.length === 1 ? ' completado' : ' completados') : (done.length === 1 ? ' completada' : ' completadas')) +
+        ' em ' + also + ' (ver quais)';
       var list = document.createElement('ol');
       done.forEach(function (d) {
         var li = document.createElement('li');

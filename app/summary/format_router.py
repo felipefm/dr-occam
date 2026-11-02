@@ -12,7 +12,7 @@ from sqlmodel import Session
 from database import engine
 from models import SummaryFormat
 from summary import format_repository as repository
-from summary.formats import DEFAULT_FORMATS, FIXED_RULES
+from summary.formats import DEFAULT_FORMATS, FIXED_RULES, KINDS
 from summary.schemas import SummaryFormatItem, SummaryFormatList
 from timezone_utils import as_aware_utc
 
@@ -25,6 +25,14 @@ class FormatCreatePayload(BaseModel):
     ensure_full_coverage: bool = Field(
         default=True,
         description="Conferir se todas as notícias foram citadas e completar as que faltarem.",
+    )
+
+
+class FormatNewPayload(FormatCreatePayload):
+    kind: Literal["pauta", "consolidado"] = Field(
+        default="pauta",
+        description="pauta = resumo de uma pauta; consolidado = de várias pautas arquivadas. "
+        "Não muda depois de criado.",
     )
 
 
@@ -46,6 +54,7 @@ def to_item(fmt: SummaryFormat) -> SummaryFormatItem:
         position=fmt.position,
         active=fmt.active,
         ensure_full_coverage=fmt.ensure_full_coverage,
+        kind=fmt.kind,
         builtin=default is not None,
         is_default=default is not None
         and default["label"] == fmt.label
@@ -58,6 +67,7 @@ def _list(session: Session) -> SummaryFormatList:
     return SummaryFormatList(
         formats=[to_item(f) for f in repository.list_formats(session)],
         fixed_rules=FIXED_RULES,
+        kinds=KINDS,
     )
 
 
@@ -81,10 +91,14 @@ def list_formats() -> SummaryFormatList:
 
 
 @router.post("", status_code=201, response_model=SummaryFormatList, summary="Criar formato")
-def create_format(payload: FormatCreatePayload) -> SummaryFormatList:
+def create_format(payload: FormatNewPayload) -> SummaryFormatList:
     with Session(engine) as session:
         repository.create_format(
-            session, payload.label.strip(), payload.prompt.strip(), payload.ensure_full_coverage
+            session,
+            payload.label.strip(),
+            payload.prompt.strip(),
+            payload.ensure_full_coverage,
+            payload.kind,
         )
         return _list(session)
 

@@ -8,15 +8,18 @@
     :root {
       --bg: #f6f7f8; --surface: #ffffff; --fg: #16181b; --fg-soft: #3d4248;
       --muted: #646b73; --border: #dfe2e6; --link: #0b57d0; --pauta: #a15c00;
+      --accent: #0d8a69; --accent-ink: #ffffff;
     }
     :root[data-theme="dark"] {
       --bg: #111317; --surface: #15171b; --fg: #f1f2f3; --fg-soft: #c9cdd2;
       --muted: #9aa0a6; --border: #262a31; --link: #7fb1ff; --pauta: #fbbf24;
+      --accent: #34d399; --accent-ink: #0b1f17;
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
         --bg: #111317; --surface: #15171b; --fg: #f1f2f3; --fg-soft: #c9cdd2;
         --muted: #9aa0a6; --border: #262a31; --link: #7fb1ff; --pauta: #fbbf24;
+        --accent: #34d399; --accent-ink: #0b1f17;
       }
     }
     * { box-sizing: border-box; }
@@ -39,6 +42,27 @@
     .titles { margin: 0; padding-left: 1.2em; color: var(--fg-soft); font-size: .93em; line-height: 1.5; }
     .more { color: var(--muted); font-size: .87em; margin-top: 4px; }
     .empty { padding: 40px 16px; text-align: center; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); }
+    .row { display: flex; gap: 10px; align-items: stretch; }
+    .row .card { flex: 1; min-width: 0; }
+    .pick { display: flex; align-items: center; padding: 0 4px; cursor: pointer; }
+    .pick input { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
+    .toolbar {
+      position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+      margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+    }
+    .toolbar .lbl { font-size: .87em; color: var(--muted); }
+    .toolbar .sel-count { font-size: .87em; color: var(--fg-soft); margin-left: auto; }
+    .tbtn {
+      min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--fg); font: inherit; font-size: .87em; cursor: pointer;
+    }
+    .tbtn:hover:not(:disabled) { border-color: var(--muted); }
+    .tbtn:disabled { opacity: .5; cursor: not-allowed; }
+    .tbtn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    .feedback { flex-basis: 100%; margin: 0; font-size: .85em; color: #c0392b; }
+    .feedback:empty { display: none; }
+    h2.section { font-size: .8em; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 28px 0 10px; }
+    .tag-summary { color: var(--accent); }
   </style>
   <script>
     // Mesmo tema escolhido na tela inicial (preferência deste navegador).
@@ -55,14 +79,43 @@
     <h1>Pautas arquivadas</h1>
     <a href="/">← Tela inicial</a>
   </header>
+  {% if consolidations %}
+  <h2 class="section">Resumos consolidados</h2>
+  <ol class="list">
+    {% for c in consolidations %}
+    <li>
+      <a class="card" href="/consolidados/{{ c.id }}">
+        <span class="card-head">
+          <strong>Período {{ c.label }}</strong>
+          <span class="count">{{ c.pautas }} pautas · {{ c.days }} {{ "dia" if c.days == 1 else "dias" }}{% if c.has_summary %} · <span class="tag-summary">com resumo</span>{% endif %}</span>
+        </span>
+        <div class="more">{{ c.news }} notícias no total</div>
+      </a>
+    </li>
+    {% endfor %}
+  </ol>
+  <h2 class="section">Pautas</h2>
+  {% endif %}
   {% if archives %}
+  <div class="toolbar" role="group" aria-label="Seleção para o resumo consolidado">
+    <span class="lbl">Selecionar:</span>
+    <button class="tbtn" type="button" data-days="7">Últimos 7 dias</button>
+    <button class="tbtn" type="button" data-days="30">Últimos 30 dias</button>
+    <button class="tbtn" type="button" id="clear-sel">Limpar</button>
+    <span class="sel-count" id="sel-count" aria-live="polite">Nenhuma selecionada</span>
+    <button class="tbtn primary" type="button" id="consolidate-btn" disabled>Gerar consolidado</button>
+    <p class="feedback" id="sel-feedback" role="status"></p>
+  </div>
   <ol class="list">
     {% for a in archives %}
-    <li>
+    <li class="row">
+      <label class="pick" title="Incluir no resumo consolidado">
+        <input type="checkbox" class="pick-box" value="{{ a.id }}" data-date="{{ a.date_iso }}" aria-label="Incluir a pauta de {{ a.label }} no consolidado">
+      </label>
       <a class="card" href="/pautas/{{ a.id }}">
         <span class="card-head">
           <strong>Pauta de {{ a.label }}</strong>
-          <span class="count">{{ a.count }} {{ "tema" if a.count == 1 else "temas" }}{% if a.has_summary %} · com resumo{% endif %}</span>
+          <span class="count">{{ a.count }} {{ "tema" if a.count == 1 else "temas" }}{% if a.has_summary %} · <span class="tag-summary">com resumo</span>{% endif %}</span>
         </span>
         <ol class="titles">
           {% for title in a.titles[:3] %}<li>{{ title }}</li>{% endfor %}
@@ -72,6 +125,62 @@
     </li>
     {% endfor %}
   </ol>
+  <script>
+    // Seleção de pautas para o resumo consolidado (API em summary/consolidation_router.py).
+    (function () {
+      var boxes = Array.prototype.slice.call(document.querySelectorAll('.pick-box'));
+      var count = document.getElementById('sel-count');
+      var btn = document.getElementById('consolidate-btn');
+      var feedback = document.getElementById('sel-feedback');
+      function selected() { return boxes.filter(function (b) { return b.checked; }); }
+      function update() {
+        var sel = selected();
+        var days = {};
+        sel.forEach(function (b) { days[b.dataset.date] = true; });
+        var nDays = Object.keys(days).length;
+        count.textContent = sel.length
+          ? sel.length + (sel.length === 1 ? ' pauta' : ' pautas') + ' · ' + nDays + (nDays === 1 ? ' dia' : ' dias')
+          : 'Nenhuma selecionada';
+        btn.disabled = sel.length < 2;
+        btn.title = sel.length < 2 ? 'Selecione pelo menos 2 pautas' : '';
+      }
+      function localISO(d) {
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      }
+      boxes.forEach(function (b) { b.addEventListener('change', update); });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-days]'), function (t) {
+        t.addEventListener('click', function () {
+          var since = new Date();
+          since.setDate(since.getDate() - (Number(t.dataset.days) - 1));
+          var from = localISO(since);
+          boxes.forEach(function (b) { b.checked = b.dataset.date >= from; });
+          update();
+        });
+      });
+      document.getElementById('clear-sel').addEventListener('click', function () {
+        boxes.forEach(function (b) { b.checked = false; });
+        update();
+      });
+      btn.addEventListener('click', function () {
+        feedback.textContent = '';
+        btn.disabled = true;
+        fetch('/api/consolidations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ archive_ids: selected().map(function (b) { return Number(b.value); }) })
+        }).then(function (res) {
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Erro ' + res.status);
+            window.location.href = data.url;
+          });
+        }).catch(function (err) {
+          feedback.textContent = 'Não foi possível criar o consolidado: ' + err.message;
+          update();
+        });
+      });
+      update();
+    })();
+  </script>
   {% else %}
   <div class="empty">Nenhuma pauta arquivada ainda. Na tela inicial, use “Arquivar pauta” depois de enviar ou salvar uma pauta.</div>
   {% endif %}

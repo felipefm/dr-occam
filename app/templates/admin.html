@@ -224,7 +224,8 @@
 
       <div class="border-t border-neutral-800 px-5 py-5 flex flex-col gap-5">
         <p class="text-xs text-neutral-500">
-          Cada formato aparece no seletor do quadro “Resumo por IA” da pauta, na ordem abaixo.
+          Cada formato aparece no seletor do quadro “Resumo por IA”, na ordem abaixo: os diários na pauta,
+          os consolidados no resumo de várias pautas (em /pautas, selecione as pautas e “Gerar consolidado”).
           O prompt diz à IA como escrever o resumo; cada versão gerada guarda o prompt usado,
           então dá para comparar o antes e o depois de uma edição.
         </p>
@@ -234,6 +235,14 @@
 
         <div class="rounded-md border border-dashed border-neutral-700 p-4 flex flex-col gap-3">
           <h4 class="text-sm font-medium text-neutral-300">Novo formato</h4>
+          <label class="flex flex-wrap items-center gap-2 text-sm text-neutral-300">
+            Tipo
+            <select id="new-format-kind" class="rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="pauta">Diário (uma pauta)</option>
+              <option value="consolidado">Consolidado (várias pautas)</option>
+            </select>
+            <span class="text-xs text-neutral-500">não muda depois de criado</span>
+          </label>
           <input id="new-format-label" type="text" maxlength="120" placeholder="Nome (ex.: Resumo curto para WhatsApp)"
             class="rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
           <textarea id="new-format-prompt" rows="6" maxlength="20000" placeholder="Prompt: quem a IA é, o que recebe e como deve escrever o texto."
@@ -243,7 +252,7 @@
           </label>
           <div class="flex flex-wrap gap-2">
             <button id="new-format-btn" type="button" class="rounded-md bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Criar formato</button>
-            <button id="new-format-copy-btn" type="button" class="rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors">Partir do prompt do primeiro formato</button>
+            <button id="new-format-copy-btn" type="button" class="rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors">Partir do prompt do primeiro formato do tipo</button>
           </div>
         </div>
 
@@ -724,6 +733,7 @@
       const inputCls = 'rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-500';
       const smallBtn = 'rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
       let formats = [];
+      let kinds = {};
 
       if (location.hash === '#formatos') details.open = true;
 
@@ -748,13 +758,14 @@
 
       function apply(data) {
         formats = data.formats;
+        kinds = data.kinds;
         document.getElementById('fixed-rules').textContent = data.fixed_rules;
         const active = formats.filter(f => f.active).length;
         badge.textContent = active + (active === 1 ? ' ativo' : ' ativos');
         render();
       }
 
-      function card(f, i) {
+      function card(f, i, groupSize) {
         const el = document.createElement('div');
         el.className = 'rounded-md border border-neutral-800 bg-neutral-950/40 p-4 flex flex-col gap-3';
         const tag = f.builtin
@@ -777,7 +788,7 @@
           <div class="flex flex-wrap items-center gap-2">
             <button type="button" class="f-save ${smallBtn} bg-indigo-600 hover:bg-indigo-500 text-white" disabled>Salvar</button>
             <button type="button" class="f-up ${smallBtn} bg-neutral-800 hover:bg-neutral-700 text-neutral-200" aria-label="Subir no seletor" ${i === 0 ? 'disabled' : ''}>↑</button>
-            <button type="button" class="f-down ${smallBtn} bg-neutral-800 hover:bg-neutral-700 text-neutral-200" aria-label="Descer no seletor" ${i === formats.length - 1 ? 'disabled' : ''}>↓</button>
+            <button type="button" class="f-down ${smallBtn} bg-neutral-800 hover:bg-neutral-700 text-neutral-200" aria-label="Descer no seletor" ${i === groupSize - 1 ? 'disabled' : ''}>↓</button>
             ${f.builtin
               ? `<button type="button" class="f-restore ${smallBtn} bg-neutral-800 hover:bg-neutral-700 text-neutral-200" ${f.is_default ? 'disabled' : ''}>Restaurar padrão</button>`
               : `<button type="button" class="f-delete ${smallBtn} bg-red-600/20 hover:bg-red-600/30 text-red-400">Apagar</button>`}
@@ -829,24 +840,35 @@
         return el;
       }
 
+      // Um grupo por tipo; ↑↓ e a ordem do seletor valem dentro do grupo.
       function render() {
         list.textContent = '';
-        formats.forEach((f, i) => list.appendChild(card(f, i)));
+        Object.entries(kinds).forEach(([kind, kindLabel]) => {
+          const group = formats.filter(f => f.kind === kind);
+          if (!group.length) return;
+          const h = document.createElement('h4');
+          h.className = 'text-xs uppercase tracking-wide text-neutral-500 mt-2';
+          h.textContent = kindLabel;
+          list.appendChild(h);
+          group.forEach((f, i) => list.appendChild(card(f, i, group.length)));
+        });
       }
 
       const newLabel = document.getElementById('new-format-label');
       const newPrompt = document.getElementById('new-format-prompt');
       const newBtn = document.getElementById('new-format-btn');
       document.getElementById('new-format-copy-btn').addEventListener('click', () => {
-        if (formats.length && (!newPrompt.value.trim() || confirm('Substituir o texto já digitado?'))) {
-          newPrompt.value = formats[0].prompt;
+        const kind = document.getElementById('new-format-kind').value;
+        const base = formats.find(f => f.kind === kind);
+        if (base && (!newPrompt.value.trim() || confirm('Substituir o texto já digitado?'))) {
+          newPrompt.value = base.prompt;
         }
       });
       newBtn.addEventListener('click', async () => {
         showError('');
         newBtn.disabled = true;
         try {
-          apply(await api('POST', '/api/summary-formats', { label: newLabel.value, prompt: newPrompt.value, ensure_full_coverage: document.getElementById('new-format-coverage').checked }));
+          apply(await api('POST', '/api/summary-formats', { label: newLabel.value, prompt: newPrompt.value, ensure_full_coverage: document.getElementById('new-format-coverage').checked, kind: document.getElementById('new-format-kind').value }));
           newLabel.value = '';
           newPrompt.value = '';
         } catch (err) { showError(err.message); }

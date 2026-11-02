@@ -1,6 +1,6 @@
 # Ideia: resumo consolidado de várias pautas
 
-**Status:** em discussão, nada implementado. Registrado em 2026-11-01, para continuar em outra sessão.
+**Status:** implementado em 2026-11-02, ver `docs/resumo-consolidado.md`. Este documento fica como registro da discussão (registrada em 2026-11-01).
 **Origem:** depois do resumo por IA da pauta ir para produção (ver `docs/resumo-da-pauta.md`).
 
 ## A ideia
@@ -35,3 +35,14 @@ Motor com trava (`summary/engine.py`), versões com escolha, formatos editáveis
 ## Sugestão antes de implementar
 
 Usar o resumo diário por 1–2 semanas. Os resumos acumulados viram o material de teste do consolidado, e dá para calibrar com dados reais, como foi feito com a cobertura.
+
+## Decisões tomadas (2026-11-02)
+
+- **Período:** seleção livre em `/pautas` (caixas de marcar + atalhos "Últimos 7/30 dias").
+- **Pauta sem resumo escolhido:** entra pelas próprias notícias, sem gerar o resumo antes.
+- **Várias pautas no mesmo dia:** agrupadas por data (horário de Brasília).
+- **Links:** o envio leva o texto e a contagem por dia; o PDF leva todas as notícias com links.
+- **Formatos:** tipo diário/consolidado; de fábrica, "Panorama do período".
+- **Cobertura:** por tema (parágrafos dos resumos diários e notícias das pautas sem resumo).
+- **Erros herdados:** títulos originais enviados como referência.
+- **Fica para depois:** detecção automática de temas recorrentes.

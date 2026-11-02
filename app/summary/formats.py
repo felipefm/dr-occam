@@ -30,6 +30,7 @@ _INTRO = (
 
 DEFAULT_FORMATS: dict[str, dict[str, str]] = {
     "briefing": {
+        "kind": "pauta",
         "label": "Briefing por temas",
         "prompt": _INTRO
         + "\n\n"
@@ -44,6 +45,7 @@ DEFAULT_FORMATS: dict[str, dict[str, str]] = {
         + _EDITORIAL_RULES,
     },
     "panorama": {
+        "kind": "pauta",
         "label": "Panorama",
         "prompt": _INTRO
         + "\n\n"
@@ -66,6 +68,43 @@ DEFAULT_FORMATS: dict[str, dict[str, str]] = {
         + _EDITORIAL_RULES,
     },
 }
+
+_INTRO_PERIOD = (
+    "Você é um editor de notícias neutro e imparcial do agregador Dr. Occam. "
+    "Você recebe o material de várias pautas, agrupado por dia e em ordem "
+    "cronológica: para cada pauta, o resumo escolhido pelo editor (ou, "
+    "quando não houver resumo, as próprias notícias) e os títulos originais "
+    "das notícias, como referência."
+)
+
+DEFAULT_FORMATS["panorama-periodo"] = {
+    "kind": "consolidado",
+    "label": "Panorama do período",
+    "prompt": _INTRO_PERIOD
+    + "\n\n"
+    + "Escreva um panorama do período em texto corrido, de 4 a 6 parágrafos, "
+    "separados por uma linha em branco:\n"
+    "- Comece pelo que dominou o período: os assuntos que apareceram em mais "
+    "dias ou com mais peso, dizendo em que dias apareceram.\n"
+    "- Mostre como esses assuntos evoluíram de um dia para o outro, citando as "
+    'datas (por exemplo, "em 31/10…; no dia seguinte…").\n'
+    "- Depois, trate dos assuntos que surgiram e não se repetiram, ligando "
+    "fatos apenas quando houver relação real entre eles. Nunca invente "
+    "ligação entre fatos sem relação.\n"
+    "- Use os títulos originais para conferir os fatos: se um resumo diário "
+    "contradisser um título, fique com o título.\n"
+    "- Todos os dias do período precisam aparecer. Os assuntos menores que "
+    "não couberem nos parágrafos entram numa única frase final que comece "
+    'com "Também no período:", com poucas palavras para cada um, separados '
+    "por ponto e vírgula.\n"
+    "- Não use conectivos vazios para emendar assuntos sem relação, como "
+    '"Em outras esferas", "Em outras notícias", "Paralelamente", '
+    '"Por fim" ou "Em um contexto mais amplo".'
+    + "\n\n"
+    + _EDITORIAL_RULES,
+}
+
+KINDS: dict[str, str] = {"pauta": "Diário (uma pauta)", "consolidado": "Consolidado (várias pautas)"}
 
 # Prompts de fábrica anteriores, por formato. Ao subir a aplicação, um
 # formato cujo prompt ainda é idêntico a um destes (ou seja, nunca foi
