@@ -5,126 +5,308 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pautas arquivadas — Dr. Occam</title>
   <style>
+    /* Mesmas cores, botões e cartões da tela inicial (index.html). */
     :root {
-      --bg: #f6f7f8; --surface: #ffffff; --fg: #16181b; --fg-soft: #3d4248;
-      --muted: #646b73; --border: #dfe2e6; --link: #0b57d0; --pauta: #a15c00;
-      --accent: #0d8a69; --accent-ink: #ffffff;
+      --bg: #f6f7f8;
+      --surface: #ffffff;
+      --surface-2: #f0f2f4;
+      --fg: #16181b;
+      --fg-soft: #3d4248;
+      --muted: #646b73;
+      --border: #dfe2e6;
+      --link: #0b57d0;
+      --accent: #0d8a69;
+      --accent-ink: #ffffff;
+      --accent-soft: rgba(13, 138, 105, .12);
+      --pauta: #a15c00;
+      --pauta-soft: rgba(161, 92, 0, .1);
+      --danger: #c0392b;
+      --header-bg: rgba(246, 247, 248, .92);
+      --font-scale: 1;
     }
     :root[data-theme="dark"] {
-      --bg: #111317; --surface: #15171b; --fg: #f1f2f3; --fg-soft: #c9cdd2;
-      --muted: #9aa0a6; --border: #262a31; --link: #7fb1ff; --pauta: #fbbf24;
-      --accent: #34d399; --accent-ink: #0b1f17;
+      --bg: #111317;
+      --surface: #15171b;
+      --surface-2: #1b1e24;
+      --fg: #f1f2f3;
+      --fg-soft: #c9cdd2;
+      --muted: #9aa0a6;
+      --border: #262a31;
+      --link: #7fb1ff;
+      --accent: #34d399;
+      --accent-ink: #0b1f17;
+      --accent-soft: rgba(52, 211, 153, .14);
+      --pauta: #fbbf24;
+      --pauta-soft: rgba(251, 191, 36, .12);
+      --danger: #f87171;
+      --header-bg: rgba(17, 19, 23, .92);
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
-        --bg: #111317; --surface: #15171b; --fg: #f1f2f3; --fg-soft: #c9cdd2;
-        --muted: #9aa0a6; --border: #262a31; --link: #7fb1ff; --pauta: #fbbf24;
-        --accent: #34d399; --accent-ink: #0b1f17;
+        --bg: #111317;
+        --surface: #15171b;
+        --surface-2: #1b1e24;
+        --fg: #f1f2f3;
+        --fg-soft: #c9cdd2;
+        --muted: #9aa0a6;
+        --border: #262a31;
+        --link: #7fb1ff;
+        --accent: #34d399;
+        --accent-ink: #0b1f17;
+        --accent-soft: rgba(52, 211, 153, .14);
+        --pauta: #fbbf24;
+        --pauta-soft: rgba(251, 191, 36, .12);
+        --danger: #f87171;
+        --header-bg: rgba(17, 19, 23, .92);
       }
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0 auto; max-width: 760px; padding: 24px 16px 48px;
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 15px;
-      background: var(--bg); color: var(--fg);
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: calc(15px * var(--font-scale));
+      background: var(--bg);
+      color: var(--fg);
+      transition: background .15s ease, color .15s ease;
     }
     a { color: var(--link); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
-    header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 20px; }
-    h1 { margin: 0; font-size: 1.4em; }
-    .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
-    .card { display: block; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--fg); }
-    .card:hover { border-color: var(--muted); text-decoration: none; }
-    .card-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-    .card-head strong { font-weight: 600; }
-    .count { color: var(--pauta); font-size: .87em; white-space: nowrap; }
-    .titles { margin: 0; padding-left: 1.2em; color: var(--fg-soft); font-size: .93em; line-height: 1.5; }
-    .more { color: var(--muted); font-size: .87em; margin-top: 4px; }
-    .empty { padding: 40px 16px; text-align: center; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); }
-    .row { display: flex; gap: 10px; align-items: stretch; }
-    .row .card { flex: 1; min-width: 0; }
-    .pick { display: flex; align-items: center; padding: 0 4px; cursor: pointer; }
-    .pick input { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
-    .toolbar {
-      position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
-      margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+    button { font: inherit; color: inherit; }
+    button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .wrap { max-width: 1360px; margin: 0 auto; padding: 0 24px; }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+      min-height: 40px; padding: 0 .95em; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--fg);
+      font-size: .87em; cursor: pointer; text-decoration: none; white-space: nowrap;
     }
-    .toolbar .lbl { font-size: .87em; color: var(--muted); }
-    .toolbar .sel-count { font-size: .87em; color: var(--fg-soft); margin-left: auto; }
-    .tbtn {
-      min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border);
-      background: var(--surface); color: var(--fg); font: inherit; font-size: .87em; cursor: pointer;
+    .btn:hover { border-color: var(--muted); text-decoration: none; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-small { min-height: 36px; font-size: .84em; }
+    .btn-primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    .btn-primary:hover:not(:disabled) { border-color: var(--accent); filter: brightness(1.08); }
+
+    header.top {
+      position: sticky; top: 0; z-index: 10;
+      background: var(--header-bg); backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
     }
-    .tbtn:hover:not(:disabled) { border-color: var(--muted); }
-    .tbtn:disabled { opacity: .5; cursor: not-allowed; }
-    .tbtn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
-    .feedback { flex-basis: 100%; margin: 0; font-size: .85em; color: #c0392b; }
+    .top-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding-top: 14px; padding-bottom: 14px; }
+    .brand { display: flex; align-items: baseline; gap: 10px; }
+    .brand h1 { margin: 0; font-size: 1.33em; letter-spacing: -.01em; }
+    .brand h1 a { color: inherit; }
+    .brand .mono { font-size: .8em; color: var(--muted); }
+    .search { flex: 1 1 260px; min-width: 0; }
+    .search input {
+      width: 100%; height: 44px; padding: 0 14px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--fg); font: inherit; font-size: .93em;
+    }
+    .toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+    .toolbar .btn { min-width: 40px; padding: 0 .7em; }
+
+    .layout { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; padding-top: 20px; padding-bottom: 64px; }
+    main.feed { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+
+    .scan { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+    .scan-head {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2);
+    }
+    .scan-head h2 { margin: 0; font-size: 1em; font-weight: 600; }
+    .scan-head .scan-meta { font-size: .87em; color: var(--muted); }
+
+    .item { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
+    .item:last-child { border-bottom: 0; }
+    .item:hover { background: var(--surface-2); }
+    .item.is-picked { background: var(--accent-soft); }
+    .pick { flex: 0 0 auto; display: flex; align-items: flex-start; padding: 14px 4px 14px 16px; cursor: pointer; }
+    .pick input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; }
+    .item-link { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 12px 16px 14px 10px; color: var(--fg); }
+    .item-link:hover { text-decoration: none; }
+    .item-link:hover .item-title { text-decoration: underline; }
+    .item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .8em; color: var(--muted); }
+    .chip { padding: 2px 8px; border-radius: 6px; background: var(--surface-2); color: var(--fg-soft); }
+    .item:hover .chip, .item.is-picked .chip { background: var(--surface); }
+    .tag-summary { padding: 2px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+    .item-title { font-size: 1em; line-height: 1.4; font-weight: 600; }
+    .item-title .weekday { color: var(--pauta); font-weight: 500; }
+    .titles { margin: 0; padding-left: 1.2em; color: var(--fg-soft); font-size: .9em; line-height: 1.55; }
+    .more { color: var(--muted); font-size: .85em; }
+
+    .empty { padding: 48px 24px; text-align: center; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); }
+    .empty strong { display: block; font-size: 1.13em; color: var(--fg); margin-bottom: 6px; }
+
+    aside.side {
+      flex: 1 1 280px; max-width: 100%; position: sticky; top: 92px;
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .panel { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .panel h2 { margin: 0; font-size: 1em; }
+    .panel h2 .mono { font-size: .8em; color: var(--muted); margin-left: 6px; font-weight: 400; }
+    .hint { margin: 0; font-size: .87em; line-height: 1.5; color: var(--muted); }
+    .pick-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .pick-grid .btn { width: 100%; padding: 0 .5em; }
+    .sel-count { font-size: .9em; color: var(--fg-soft); }
+    .sel-count b { color: var(--fg); }
+    #consolidate-btn { width: 100%; }
+    .feedback { margin: 0; font-size: .85em; color: var(--danger); }
     .feedback:empty { display: none; }
-    h2.section { font-size: .8em; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 28px 0 10px; }
-    .tag-summary { color: var(--accent); }
+    .cons-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .cons-list a { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); color: var(--fg); }
+    .cons-list a:hover { text-decoration: none; outline: 1px solid var(--border); }
+    .cons-list .ttl { font-size: .93em; font-weight: 600; }
+    .cons-list .src { font-size: .8em; color: var(--muted); }
+    .cons-list .tag-summary { padding: 0; background: none; }
+
+    @media (max-width: 700px) {
+      .wrap { padding: 0 16px; }
+      header.top { position: static; }
+      aside.side { position: static; order: -1; }
+    }
   </style>
   <script>
-    // Mesmo tema escolhido na tela inicial (preferência deste navegador).
+    // Mesmo tema e tamanho de fonte escolhidos na tela inicial (preferência
+    // deste navegador), aplicados antes de desenhar para não piscar.
     (function () {
       try {
         var theme = localStorage.getItem('occam-theme');
         if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+        var scale = parseFloat(localStorage.getItem('occam-font-scale'));
+        if (scale) document.documentElement.style.setProperty('--font-scale', scale);
       } catch (e) {}
     })();
   </script>
 </head>
 <body>
-  <header>
-    <h1>Pautas arquivadas</h1>
-    <a href="/">← Tela inicial</a>
+  <header class="top">
+    <div class="wrap top-row">
+      <div class="brand">
+        <h1><a href="/">Dr. Occam</a></h1>
+        <span class="mono">Pautas arquivadas</span>
+      </div>
+      <form class="search" action="/search" method="get" role="search">
+        <label for="pautas-search" class="visually-hidden">Buscar notícias</label>
+        <input id="pautas-search" name="q" type="search" placeholder="Buscar: o que saiu sobre eleições em Israel nesta semana">
+      </form>
+      <a class="btn" href="/">← Tela inicial</a>
+      <div class="toolbar">
+        <button class="btn" id="font-decrease" type="button" aria-label="Diminuir fonte" title="Diminuir fonte">A−</button>
+        <button class="btn" id="font-increase" type="button" aria-label="Aumentar fonte" title="Aumentar fonte">A+</button>
+        <button class="btn" id="theme-toggle" type="button" aria-label="Alternar tema claro/escuro" title="Alternar tema">🌙</button>
+      </div>
+    </div>
   </header>
-  {% if consolidations %}
-  <h2 class="section">Resumos consolidados</h2>
-  <ol class="list">
-    {% for c in consolidations %}
-    <li>
-      <a class="card" href="/consolidados/{{ c.id }}">
-        <span class="card-head">
-          <strong>Período {{ c.label }}</strong>
-          <span class="count">{{ c.pautas }} pautas · {{ c.days }} {{ "dia" if c.days == 1 else "dias" }}{% if c.has_summary %} · <span class="tag-summary">com resumo</span>{% endif %}</span>
-        </span>
-        <div class="more">{{ c.news }} notícias no total</div>
-      </a>
-    </li>
-    {% endfor %}
-  </ol>
-  <h2 class="section">Pautas</h2>
-  {% endif %}
-  {% if archives %}
-  <div class="toolbar" role="group" aria-label="Seleção para o resumo consolidado">
-    <span class="lbl">Selecionar:</span>
-    <button class="tbtn" type="button" data-days="7">Últimos 7 dias</button>
-    <button class="tbtn" type="button" data-days="30">Últimos 30 dias</button>
-    <button class="tbtn" type="button" id="clear-sel">Limpar</button>
-    <span class="sel-count" id="sel-count" aria-live="polite">Nenhuma selecionada</span>
-    <button class="tbtn primary" type="button" id="consolidate-btn" disabled>Gerar consolidado</button>
-    <p class="feedback" id="sel-feedback" role="status"></p>
-  </div>
-  <ol class="list">
-    {% for a in archives %}
-    <li class="row">
-      <label class="pick" title="Incluir no resumo consolidado">
-        <input type="checkbox" class="pick-box" value="{{ a.id }}" data-date="{{ a.date_iso }}" aria-label="Incluir a pauta de {{ a.label }} no consolidado">
-      </label>
-      <a class="card" href="/pautas/{{ a.id }}">
-        <span class="card-head">
-          <strong>Pauta de {{ a.label }}</strong>
-          <span class="count">{{ a.count }} {{ "tema" if a.count == 1 else "temas" }}{% if a.has_summary %} · <span class="tag-summary">com resumo</span>{% endif %}</span>
-        </span>
-        <ol class="titles">
-          {% for title in a.titles[:3] %}<li>{{ title }}</li>{% endfor %}
+
+  <div class="wrap layout">
+    <main class="feed">
+      {% if archives %}
+      <section class="scan">
+        <div class="scan-head">
+          <h2>Pautas</h2>
+          <span class="scan-meta mono">{{ archives|length }} {{ "arquivada" if archives|length == 1 else "arquivadas" }}</span>
+        </div>
+        {% for a in archives %}
+        <article class="item">
+          <label class="pick" title="Incluir no resumo consolidado">
+            <input type="checkbox" class="pick-box" value="{{ a.id }}" data-date="{{ a.date_iso }}" aria-label="Incluir a pauta de {{ a.label }} no consolidado">
+          </label>
+          <a class="item-link" href="/pautas/{{ a.id }}">
+            <span class="item-meta">
+              <span class="chip">{{ a.count }} {{ "tema" if a.count == 1 else "temas" }}</span>
+              {% if a.has_summary %}<span class="tag-summary">com resumo</span>{% endif %}
+            </span>
+            {% set parts = a.label.split(" · ") %}
+            <span class="item-title">Pauta de <span class="mono">{{ parts[0] }}</span>{% if parts|length > 1 %} · <span class="weekday">{{ parts[1] }}</span>{% endif %}</span>
+            <ol class="titles">
+              {% for title in a.titles[:3] %}<li>{{ title }}</li>{% endfor %}
+            </ol>
+            {% if a.count > 3 %}<span class="more">e mais {{ a.count - 3 }}</span>{% endif %}
+          </a>
+        </article>
+        {% endfor %}
+      </section>
+      {% else %}
+      <div class="empty">
+        <strong>Nenhuma pauta arquivada ainda</strong>
+        Na tela inicial, use “Arquivar pauta” depois de enviar ou salvar uma pauta.
+      </div>
+      {% endif %}
+    </main>
+
+    <aside class="side">
+      {% if archives %}
+      <section class="panel" role="group" aria-labelledby="cons-title">
+        <h2 id="cons-title">Resumo consolidado</h2>
+        <p class="hint">Marque duas ou mais pautas para a IA resumir o período a partir dos resumos de cada dia.</p>
+        <div class="pick-grid">
+          <button class="btn btn-small" type="button" data-days="7">7 dias</button>
+          <button class="btn btn-small" type="button" data-days="30">30 dias</button>
+          <button class="btn btn-small" type="button" id="clear-sel">Limpar</button>
+        </div>
+        <span class="sel-count" id="sel-count" aria-live="polite">Nenhuma selecionada</span>
+        <button class="btn btn-primary" type="button" id="consolidate-btn" disabled>Gerar consolidado</button>
+        <p class="feedback" id="sel-feedback" role="status"></p>
+      </section>
+      {% endif %}
+      {% if consolidations %}
+      <section class="panel">
+        <h2>Consolidados <span class="mono">{{ consolidations|length }}</span></h2>
+        <ol class="cons-list">
+          {% for c in consolidations %}
+          <li>
+            <a href="/consolidados/{{ c.id }}">
+              <span class="ttl">Período {{ c.label }}</span>
+              <span class="src">{{ c.pautas }} pautas · {{ c.days }} {{ "dia" if c.days == 1 else "dias" }} · {{ c.news }} notícias{% if c.has_summary %} · <span class="tag-summary">com resumo</span>{% endif %}</span>
+            </a>
+          </li>
+          {% endfor %}
         </ol>
-        {% if a.count > 3 %}<div class="more">e mais {{ a.count - 3 }}</div>{% endif %}
-      </a>
-    </li>
-    {% endfor %}
-  </ol>
+      </section>
+      {% endif %}
+    </aside>
+  </div>
+
+  <script>
+    // --- Tema e tamanho de fonte (mesmas chaves da tela inicial) ---
+    (function () {
+      var root = document.documentElement;
+      var THEME_KEY = 'occam-theme';
+      var FONT_KEY = 'occam-font-scale';
+      var MIN_SCALE = 0.8;
+      var MAX_SCALE = 1.6;
+      var themeBtn = document.getElementById('theme-toggle');
+
+      function systemPrefersDark() {
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      }
+      function store(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+      function applyTheme(theme) {
+        if (theme === 'dark' || theme === 'light') root.dataset.theme = theme;
+        else delete root.dataset.theme;
+        var dark = theme === 'dark' || (theme !== 'light' && systemPrefersDark());
+        themeBtn.textContent = dark ? '☀️' : '🌙';
+      }
+      applyTheme(root.dataset.theme);
+      themeBtn.addEventListener('click', function () {
+        var current = root.dataset.theme || (systemPrefersDark() ? 'dark' : 'light');
+        var next = current === 'dark' ? 'light' : 'dark';
+        store(THEME_KEY, next);
+        applyTheme(next);
+      });
+      function changeFont(delta) {
+        var current = parseFloat(getComputedStyle(root).getPropertyValue('--font-scale')) || 1;
+        var scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.round((current + delta) * 100) / 100));
+        root.style.setProperty('--font-scale', scale);
+        store(FONT_KEY, String(scale));
+      }
+      document.getElementById('font-increase').addEventListener('click', function () { changeFont(0.1); });
+      document.getElementById('font-decrease').addEventListener('click', function () { changeFont(-0.1); });
+    })();
+  </script>
+  {% if archives %}
   <script>
     // Seleção de pautas para o resumo consolidado (API em summary/consolidation_router.py).
     (function () {
@@ -137,9 +319,10 @@
         var sel = selected();
         var days = {};
         sel.forEach(function (b) { days[b.dataset.date] = true; });
+        boxes.forEach(function (b) { b.closest('.item').classList.toggle('is-picked', b.checked); });
         var nDays = Object.keys(days).length;
-        count.textContent = sel.length
-          ? sel.length + (sel.length === 1 ? ' pauta' : ' pautas') + ' · ' + nDays + (nDays === 1 ? ' dia' : ' dias')
+        count.innerHTML = sel.length
+          ? '<b>' + sel.length + (sel.length === 1 ? ' pauta' : ' pautas') + '</b> · ' + nDays + (nDays === 1 ? ' dia' : ' dias')
           : 'Nenhuma selecionada';
         btn.disabled = sel.length < 2;
         btn.title = sel.length < 2 ? 'Selecione pelo menos 2 pautas' : '';
@@ -181,8 +364,6 @@
       update();
     })();
   </script>
-  {% else %}
-  <div class="empty">Nenhuma pauta arquivada ainda. Na tela inicial, use “Arquivar pauta” depois de enviar ou salvar uma pauta.</div>
   {% endif %}
 </body>
 </html>
