@@ -163,8 +163,13 @@ def archive_pauta(session: Session, now: datetime) -> int:
     return repository.archive_and_clear_pauta(session, items, now).id
 
 
+# Fixo em português: o locale do container não é pt_BR (%A sairia em inglês).
+WEEKDAYS = ("Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo")
+
+
 def _archive_label(archived_at: datetime) -> str:
-    return f"{to_display_timezone(archived_at):%d/%m/%Y %H:%M}"
+    local = to_display_timezone(archived_at)
+    return f"{local:%d/%m/%Y %H:%M} · {WEEKDAYS[local.weekday()]}"
 
 
 def build_pauta_archives(session: Session) -> dict[str, Any]:
