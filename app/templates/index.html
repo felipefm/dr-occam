@@ -207,7 +207,7 @@
     .empty strong { display: block; font-size: 1.13em; color: var(--fg); margin-bottom: 6px; }
 
     aside.pauta {
-      flex: 1 1 260px; max-width: 100%; position: sticky; top: 150px;
+      flex: 1 1 260px; min-width: 0; max-width: 100%; position: sticky; top: 150px;
       border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
       padding: 16px; display: flex; flex-direction: column; gap: 12px;
     }
@@ -222,7 +222,7 @@
     .pauta-list .num { font-size: .8em; color: var(--pauta); padding-top: 2px; }
     .pauta-list .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
     .pauta-list .src { font-size: .8em; color: var(--muted); }
-    .pauta-list .ttl { font-size: .93em; line-height: 1.4; }
+    .pauta-list .ttl { font-size: .93em; line-height: 1.4; overflow-wrap: anywhere; }
     .pauta-list .rm { flex: 0 0 32px; height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
     .pauta-list .rm:hover { background: var(--surface); color: var(--fg); }
     .pauta-summary-wrap { padding-top: 12px; border-top: 1px solid var(--border); }
@@ -233,7 +233,7 @@
     .pauta-feedback { margin: 0; font-size: .85em; color: var(--accent); min-height: 1.2em; }
     .pauta-preview {
       margin: 0; padding: 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border);
-      font-size: .8em; line-height: 1.6; color: var(--fg-soft); white-space: pre-wrap; max-height: 260px; overflow: auto;
+      font-size: .8em; line-height: 1.6; color: var(--fg-soft); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto;
     }
     .link-quiet { align-self: flex-start; border: 0; background: none; padding: 0; color: var(--muted); font-size: .85em; cursor: pointer; text-decoration: underline; }
 

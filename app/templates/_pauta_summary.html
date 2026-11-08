@@ -25,7 +25,7 @@
   .ps-prompt summary { cursor: pointer; font-size: .8em; color: var(--muted, #646b73); }
   .ps-prompt pre {
     margin: 6px 0 0; padding: 10px; border-radius: 8px; border: 1px dashed var(--border, #dfe2e6);
-    font: .78em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; max-height: 220px; overflow: auto;
+    font: .78em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto;
     color: var(--fg-soft, #3d4248);
   }
   .ps-gen { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -51,7 +51,7 @@
   .ps-text {
     margin: 0; padding: 12px; border-radius: 8px; border: 1px solid var(--border, #dfe2e6);
     background: var(--bg, #f6f7f8); color: var(--fg-soft, #3d4248);
-    font-size: .88em; line-height: 1.6; white-space: pre-line; max-height: 340px; overflow: auto;
+    font-size: .88em; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; max-height: 340px; overflow: auto;
   }
   .ps-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .ps-chosen { font-size: .85em; font-weight: 600; color: var(--accent, #0d8a69); }
