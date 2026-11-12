@@ -185,7 +185,7 @@ Nenhum desses comandos exige rebuild de imagem — só `docker exec` num contain
 | Variável | Descrição |
 |---|---|
 | `LLM_MODEL_1` | Modelo primário da cascata de IA, no formato aceito pelo `litellm` (ex.: `openai/<nome-do-modelo>` para um servidor OpenAI-compatible como o LM Studio). |
-| `LLM_API_BASE_1` | Base URL do modelo primário (ex.: `http://<IP_DA_MAQUINA_NA_REDE>:1234/v1` do LM Studio). Opcional — só necessário para endpoints customizados. |
+| `LLM_API_BASE_1` | Base URL do modelo primário (ex.: `http://<IP_DA_MAQUINA_NA_REDE>:1234/v1` do LM Studio). Opcional — só necessário para endpoints customizados. Pode ser trocado sem reiniciar em /admin → "Servidor de IA": o endereço salvo lá substitui este valor em todo lugar que usa o mesmo endereço (incluindo `EMBEDDING_API_BASE`), e o modelo salvo lá substitui o `LLM_MODEL_N` desse servidor. O modelo de embedding não é editável no /admin. |
 | `LLM_API_KEY_1` | Chave/token do modelo primário (LM Studio local geralmente aceita qualquer valor, ex.: `lm-studio`). |
 | `LLM_MODEL_2` | Modelo de fallback, usado automaticamente se o primário falhar ou der timeout (ex.: `gemini/gemini-1.5-flash`). |
 | `LLM_API_KEY_2` | Credencial do modelo de fallback. |

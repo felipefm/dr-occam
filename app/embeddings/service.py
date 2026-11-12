@@ -14,6 +14,7 @@ from embeddings.config import (
     EMBEDDING_MODEL,
     EMBEDDING_TIMEOUT_SECONDS,
 )
+from llm_server import resolve_api_base
 from models import Article
 
 logger = logging.getLogger(__name__)
@@ -42,8 +43,10 @@ def build_embedding_text(article: Article) -> str:
 
 def _provider_kwargs() -> dict[str, object]:
     kwargs: dict[str, object] = {}
-    if EMBEDDING_API_BASE:
-        kwargs["api_base"] = EMBEDDING_API_BASE
+    # O endereço do servidor local pode ter sido trocado no /admin (llm_server.py).
+    api_base = resolve_api_base(EMBEDDING_API_BASE)
+    if api_base:
+        kwargs["api_base"] = api_base
     if EMBEDDING_API_KEY:
         kwargs["api_key"] = EMBEDDING_API_KEY
     if "text-embedding-3" in EMBEDDING_MODEL:

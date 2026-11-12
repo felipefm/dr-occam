@@ -212,6 +212,47 @@
       </div>
     </details>
 
+    <details id="llm-server" class="group bg-neutral-900 border border-neutral-800 rounded-lg mb-8 overflow-hidden">
+      <summary class="flex items-center justify-between gap-4 px-5 py-4 cursor-pointer select-none hover:bg-neutral-800/40 rounded-lg transition-colors">
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="text-lg shrink-0" aria-hidden="true">🧠</span>
+          <h3 class="text-base font-semibold text-white truncate">Servidor de IA</h3>
+          <span id="llm-server-badge" class="shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-neutral-700 text-neutral-400">…</span>
+        </div>
+        <span class="shrink-0 text-neutral-500 transition-transform duration-200 group-open:rotate-180" aria-hidden="true">▾</span>
+      </summary>
+
+      <div class="border-t border-neutral-800 px-5 py-5 flex flex-col gap-4">
+        <p class="text-xs text-neutral-500">
+          Endereço e modelo do LM Studio usados nos resumos e na busca. Ao salvar, valem a partir da
+          próxima chamada, sem reiniciar o container. Reservas na nuvem e chaves continuam no <code>docker-compose.yml</code>.
+        </p>
+        <label class="flex flex-col gap-1 text-sm text-neutral-300">
+          Endereço
+          <div class="flex flex-col sm:flex-row gap-2">
+            <input id="llm-server-input" type="url" autocomplete="off" spellcheck="false" placeholder="http://192.168.0.15:1234/v1"
+              class="flex-1 min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 font-mono placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <button id="llm-server-list-btn" type="button" class="w-full sm:w-auto shrink-0 rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Buscar modelos</button>
+          </div>
+        </label>
+        <label class="flex flex-col gap-1 text-sm text-neutral-300">
+          Modelo de chat
+          <select id="llm-server-model" class="rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+        </label>
+        <dl class="grid grid-cols-1 sm:grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+          <dt class="text-neutral-500">No compose</dt><dd id="llm-server-env" class="text-neutral-200 font-mono break-all"></dd>
+          <dt class="text-neutral-500">Embedding</dt><dd class="text-neutral-200"><span id="llm-server-embedding" class="font-mono break-all"></span> <span class="text-neutral-500">— não muda aqui: os vetores já gravados dependem dele</span></dd>
+          <dt class="text-neutral-500">Usado por</dt><dd><ul id="llm-server-uses" class="text-neutral-200 break-all"></ul></dd>
+        </dl>
+        <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-3">
+          <button id="llm-server-test-btn" type="button" class="w-full sm:w-auto rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Testar com notícia de exemplo</button>
+          <button id="llm-server-save-btn" type="button" class="w-full sm:w-auto rounded-md bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Salvar</button>
+          <button id="llm-server-reset-btn" type="button" class="hidden w-full sm:w-auto rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Voltar ao do compose</button>
+        </div>
+        <div id="llm-server-result" class="hidden rounded-md border px-3 py-2 text-sm break-words"></div>
+      </div>
+    </details>
+
     <details id="backup" class="group bg-neutral-900 border border-neutral-800 rounded-lg mb-8 overflow-hidden">
       <summary class="flex items-center justify-between gap-4 px-5 py-4 cursor-pointer select-none hover:bg-neutral-800/40 rounded-lg transition-colors">
         <div class="flex items-center gap-3 min-w-0">
@@ -906,6 +947,162 @@
       });
 
       api('GET', '/api/summary-formats').then(apply).catch(err => showError('Não foi possível carregar os formatos: ' + err.message));
+    })();
+  </script>
+  <script>
+    // Servidor de IA: endereço e modelo do LM Studio, testar e salvar sem reiniciar.
+    (() => {
+      const badge = document.getElementById('llm-server-badge');
+      const input = document.getElementById('llm-server-input');
+      const select = document.getElementById('llm-server-model');
+      const listBtn = document.getElementById('llm-server-list-btn');
+      const testBtn = document.getElementById('llm-server-test-btn');
+      const saveBtn = document.getElementById('llm-server-save-btn');
+      const resetBtn = document.getElementById('llm-server-reset-btn');
+      const resultEl = document.getElementById('llm-server-result');
+      const buttons = [listBtn, testBtn, saveBtn, resetBtn];
+      const BADGE_BASE = 'shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ';
+      const RESULT_BASE = 'rounded-md border px-3 py-2 text-sm break-words ';
+      const RESULT_CLS = {
+        ok: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+        warn: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+        error: 'border-red-500/30 bg-red-500/10 text-red-300',
+        info: 'border-neutral-700 bg-neutral-800/60 text-neutral-300',
+      };
+      let current = null;
+      let serverModels = [];
+      let loadedModels = [];
+
+      // Linhas de texto simples (nada de innerHTML com o que vem do servidor).
+      function showResult(lines, kind) {
+        resultEl.className = RESULT_BASE + RESULT_CLS[kind];
+        resultEl.textContent = '';
+        [].concat(lines).filter(Boolean).forEach((line, i) => {
+          const p = document.createElement('p');
+          if (i) p.className = 'mt-1';
+          p.textContent = line;
+          resultEl.appendChild(p);
+        });
+      }
+
+      function fillSelect(selected) {
+        const names = [...new Set([...(serverModels.length ? serverModels : []), selected, current && current.env_model].filter(Boolean))];
+        select.textContent = '';
+        names.forEach(name => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          const tags = [];
+          if (loadedModels.includes(name)) tags.push('carregado');
+          if (current && name === current.env_model) tags.push('compose');
+          if (serverModels.length && !serverModels.includes(name)) tags.push('não encontrado no servidor');
+          opt.textContent = name + (tags.length ? ' (' + tags.join(', ') + ')' : '');
+          select.appendChild(opt);
+        });
+        select.value = selected || '';
+      }
+
+      function render(data) {
+        current = data;
+        input.value = data.api_base || '';
+        fillSelect(data.model);
+        document.getElementById('llm-server-env').textContent =
+          (data.env_api_base || '(LLM_API_BASE_1 não definido)') + (data.env_model ? ' · ' + data.env_model : '');
+        document.getElementById('llm-server-embedding').textContent = data.embedding_model || '(não usa este servidor)';
+        const uses = document.getElementById('llm-server-uses');
+        uses.textContent = '';
+        (data.uses.length ? data.uses : ['nada aponta para este servidor']).forEach(u => {
+          const li = document.createElement('li');
+          li.textContent = u;
+          uses.appendChild(li);
+        });
+        const changed = data.api_base_overridden || data.model_overridden;
+        badge.textContent = changed
+          ? 'Alterado: ' + [data.api_base_overridden && 'endereço', data.model_overridden && 'modelo'].filter(Boolean).join(' e ')
+          : 'Do compose';
+        badge.className = BADGE_BASE + (changed ? 'bg-indigo-500/10 text-indigo-300' : 'bg-neutral-700 text-neutral-400');
+        resetBtn.classList.toggle('hidden', !changed);
+        const disabled = !data.env_api_base;
+        [input, select, listBtn, testBtn, saveBtn].forEach(el => { el.disabled = disabled; });
+      }
+
+      async function request(method, url, body) {
+        const res = await fetch(url, {
+          method,
+          headers: body ? { 'Content-Type': 'application/json' } : {},
+          body: body ? JSON.stringify(body) : undefined,
+          cache: 'no-store',
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const detail = Array.isArray(data.detail) ? data.detail.map(d => d.msg).join('; ') : data.detail;
+          throw new Error(detail || 'Erro ' + res.status);
+        }
+        return data;
+      }
+
+      async function listModels() {
+        const r = await request('POST', '/api/llm-server/models', { api_base: input.value });
+        if (r.chat_models.length) { serverModels = r.chat_models; loadedModels = r.loaded; }
+        fillSelect(select.value);
+        showResult(r.message + '.', r.ok ? 'ok' : (r.chat_models.length ? 'warn' : 'error'));
+        return r;
+      }
+
+      async function test() {
+        showResult('Testando ' + select.value + '… se o modelo não estiver carregado, o LM Studio carrega agora (pode levar um minuto).', 'info');
+        const r = await request('POST', '/api/llm-server/test', { api_base: input.value, model: select.value });
+        const lines = [r.message + '.'];
+        if (r.title) lines.push('Título: ' + r.title, 'Resumo: ' + r.summary);
+        lines.push(...r.warnings);
+        showResult(lines, !r.ok ? 'error' : (r.warnings.length ? 'warn' : 'ok'));
+        return r;
+      }
+
+      async function busy(btn, fn) {
+        buttons.forEach(b => { b.disabled = true; });
+        const label = btn.textContent;
+        btn.textContent = 'Aguarde…';
+        try { await fn(); }
+        catch (err) { showResult(err.message, 'error'); }
+        finally {
+          btn.textContent = label;
+          buttons.forEach(b => { b.disabled = false; });
+          if (current) {
+            const model = select.value;
+            render({ ...current, api_base: input.value, model });
+          }
+        }
+      }
+
+      listBtn.addEventListener('click', () => busy(listBtn, listModels));
+      testBtn.addEventListener('click', () => busy(testBtn, test));
+
+      saveBtn.addEventListener('click', () => busy(saveBtn, async () => {
+        const r = await test();
+        if (!r.ok && !confirm(r.message + '\n\nSalvar mesmo assim? (útil se a máquina estiver desligada agora)')) return;
+        const saved = await request('PUT', '/api/llm-server', { api_base: input.value, model: select.value });
+        render(saved);
+        showResult(['Salvo: ' + saved.api_base + ' · ' + saved.model + '. Vale a partir da próxima chamada.']
+          .concat(r.title ? ['Título do teste: ' + r.title] : []), 'ok');
+      }));
+
+      resetBtn.addEventListener('click', () => busy(resetBtn, async () => {
+        const saved = await request('PUT', '/api/llm-server', { api_base: null, model: null });
+        render(saved);
+        showResult('Voltou ao do compose: ' + saved.api_base + ' · ' + saved.model + '.', 'ok');
+      }));
+
+      request('GET', '/api/llm-server')
+        .then(data => {
+          render(data);
+          // Lista os modelos do servidor em segundo plano, só para preencher o seletor.
+          if (data.env_api_base) {
+            request('POST', '/api/llm-server/models', { api_base: data.api_base })
+              .then(r => { if (r.chat_models.length) { serverModels = r.chat_models; loadedModels = r.loaded; fillSelect(select.value); } })
+              .catch(() => {});
+          }
+        })
+        .catch(err => showResult('Não foi possível consultar o servidor de IA: ' + err.message, 'error'));
     })();
   </script>
   <script>

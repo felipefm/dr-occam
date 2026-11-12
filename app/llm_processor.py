@@ -60,7 +60,7 @@ from sqlmodel import Session, func, select
 
 import pipeline_state
 from database import engine
-from llm_cascade import LLM_CASCADE
+from llm_cascade import get_llm_cascade
 from models import Article, ArticleStatus, LLMProcessingLog
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -159,11 +159,12 @@ async def _process_article(
     summary: str | None = None
     failed = False
     force_dead = False  # timeout na repescagem pula a paciência de LLM_MAX_RETRIES
-    responding_model = LLM_CASCADE[0]["model"]
+    cascade = get_llm_cascade()
+    responding_model = cascade[0]["model"]
 
-    primary, *fallbacks = LLM_CASCADE
+    primary, *fallbacks = cascade
     primary_kwargs = {k: v for k, v in primary.items() if k != "model"}
-    cascade_models = [entry["model"] for entry in LLM_CASCADE]
+    cascade_models = [entry["model"] for entry in cascade]
 
     async with semaphore:
         logger.info(
@@ -328,7 +329,7 @@ async def run_llm_processing() -> dict[str, int]:
     apertado — eles continuam PENDING e serão retomados no próximo gatilho.
     """
     logger.info("Iniciando ciclo de processamento LLM")
-    if not LLM_CASCADE:
+    if not get_llm_cascade():
         raise RuntimeError(
             "Nenhum modelo de IA configurado. Defina ao menos LLM_MODEL_1 no .env."
         )

@@ -15,7 +15,7 @@ from datetime import date, datetime
 
 import litellm
 
-from llm_cascade import LLM_CASCADE
+from llm_cascade import get_llm_cascade
 from search.config import INTENT_LLM_TIMEOUT_SECONDS
 from search.llm_json_utils import extract_json_block
 from search.schemas import DateIntent
@@ -70,12 +70,13 @@ async def extract_date_intent(raw_query: str) -> DateIntent:
     DateIntent(cleaned_query=raw_query)`) em vez de propagar a exceção —
     ver docstring do módulo.
     """
-    if not LLM_CASCADE:
+    cascade = get_llm_cascade()
+    if not cascade:
         logger.warning("Nenhum modelo de IA configurado — busca seguirá sem filtro de data")
         return DateIntent(cleaned_query=raw_query)
 
     today = datetime.now(DISPLAY_TIMEZONE).date().isoformat()
-    primary, *fallbacks = LLM_CASCADE
+    primary, *fallbacks = cascade
     primary_kwargs = {k: v for k, v in primary.items() if k != "model"}
 
     try:

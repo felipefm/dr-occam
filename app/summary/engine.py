@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 import litellm
 
-from llm_cascade import LLM_CASCADE
+from llm_cascade import get_llm_cascade
 from summary.config import SUMMARY_LLM_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ async def exclusive() -> AsyncIterator[None]:
     """Reserva o motor para uma geração inteira (que pode ter mais de uma
     chamada ao LLM, como a rodada de complemento da cobertura). Levanta
     SummaryBusyError na hora se outro resumo estiver em andamento."""
-    if not LLM_CASCADE:
+    if not get_llm_cascade():
         raise SummaryUnavailableError("Nenhum modelo de IA configurado")
     if _lock.locked():
         raise SummaryBusyError(
@@ -72,7 +72,7 @@ async def complete(system_prompt: str, user_prompt: str, label: str) -> Synthesi
     artigos=8")."""
     if not _lock.locked():
         raise RuntimeError("summary.engine.complete() fora de exclusive()")
-    primary, *fallbacks = LLM_CASCADE
+    primary, *fallbacks = get_llm_cascade()
     primary_kwargs = {k: v for k, v in primary.items() if k != "model"}
 
     started_at = time.monotonic()

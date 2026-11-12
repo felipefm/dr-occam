@@ -196,6 +196,20 @@ class ScheduleConfig(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
+class LLMServerConfig(SQLModel, table=True):
+    """Endereço e modelo de chat do servidor de IA local salvos no /admin
+    (ver llm_server.py). Linha única; campo nulo (ou sem linha) = vale o do
+    ambiente (LLM_API_BASE_1 / LLM_MODEL_1)."""
+
+    __tablename__ = "llm_server_config"
+
+    id: int | None = Field(default=None, primary_key=True)
+    api_base: str | None = Field(default=None, max_length=500)
+    # Id como o servidor lista em /v1/models, sem o prefixo "openai/".
+    model: str | None = Field(default=None, max_length=200)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
 class ArticleEmbedding(SQLModel, table=True):
     """Proveniência do embedding de um artigo (qual modelo/dimensão gerou o
     vetor e quando). O vetor em si NÃO fica aqui: fica na tabela virtual
